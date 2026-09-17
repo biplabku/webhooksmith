@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "hooksmith-core",
-    "hooksmith-cli", "hooksmith-axum",
+    "webhooksmith",
+    "webhooksmith-cli", "webhooksmith-axum",
 ]
 resolver = "2"
 
@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Biplab Das <biplabku@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/biplabku/hooksmith"
+repository = "https://github.com/biplabku/webhooksmith"
 
 [workspace.dependencies]
 # Async runtime
