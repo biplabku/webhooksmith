@@ -1,6 +1,6 @@
 [package]
 name = "webhooksmith"
-description = "Production-grade webhook delivery engine with transactional outbox, HMAC signing, and dead letter queue"
+description = "Webhook delivery for Rust backed by Postgres. Atomic outbox pattern, HMAC-SHA256 signing, automatic retry with exponential backoff, dead letter queue. No external services."
 keywords = ["webhook", "outbox", "delivery", "postgres", "async"]
 categories = ["web-programming", "asynchronous", "database"]
 readme = "README.md"
