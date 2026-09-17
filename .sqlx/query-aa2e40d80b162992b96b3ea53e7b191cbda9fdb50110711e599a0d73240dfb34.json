@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhook_events SET status='dead', attempts=3 WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa2e40d80b162992b96b3ea53e7b191cbda9fdb50110711e599a0d73240dfb34"
+}

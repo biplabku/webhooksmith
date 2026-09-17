@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE webhook_events\n        SET status = 'pending', delivering_since = NULL, scheduled_at = NOW()\n        WHERE id = $1 AND status = 'delivering'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35aca349d02d05f8b1e24fe434ce74ece2f4bf0e33e43dd45943b925133908ee"
+}

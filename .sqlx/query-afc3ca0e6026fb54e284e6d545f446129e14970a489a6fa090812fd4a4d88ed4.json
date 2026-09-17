@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webhook_endpoints (url, signing_secret, max_attempts, initial_delay_ms)\n         VALUES ($1, 'exercise_test_secret_32chars_a', 3, 1)\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "afc3ca0e6026fb54e284e6d545f446129e14970a489a6fa090812fd4a4d88ed4"
+}

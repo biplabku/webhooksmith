@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE webhook_events\n        SET status = 'pending', delivering_since = NULL\n        WHERE status = 'delivering'\n          AND delivering_since < NOW() - ($1 || ' seconds')::INTERVAL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7eb60fb106a3121579a6374beac90172e51b0a043a27f5ed9599b588ad14497a"
+}

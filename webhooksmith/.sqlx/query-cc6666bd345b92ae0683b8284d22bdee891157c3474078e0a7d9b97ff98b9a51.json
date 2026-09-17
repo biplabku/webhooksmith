@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO webhook_delivery_attempts\n            (event_id, response_status, response_body, duration_ms, success)\n        VALUES ($1, $2, $3, $4, true)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc6666bd345b92ae0683b8284d22bdee891157c3474078e0a7d9b97ff98b9a51"
+}

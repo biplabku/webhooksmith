@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            COUNT(*) FILTER (WHERE status = 'pending')    AS \"pending!\",\n            COUNT(*) FILTER (WHERE status = 'delivering') AS \"delivering!\",\n            COUNT(*) FILTER (WHERE status = 'failed')     AS \"failed!\",\n            COUNT(*) FILTER (WHERE status = 'dead')       AS \"dead!\",\n            COUNT(*) FILTER (WHERE status = 'delivered')  AS \"delivered!\"\n        FROM webhook_events\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "delivering!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "dead!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "delivered!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ea6002bba36bb0b10e748060158a1f1053b8b2b770f2b292351d721b87dfcb03"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webhook_endpoints (url, signing_secret) VALUES ($1, 'adversarial_test_secret_32chars') RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2e825b6d1ddcfc4f5ee5d65d76729fc6c1d67c0363f7c9474b5c7fd5d4986b99"
+}

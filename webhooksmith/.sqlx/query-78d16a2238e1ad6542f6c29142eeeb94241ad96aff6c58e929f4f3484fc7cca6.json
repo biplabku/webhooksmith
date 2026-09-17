@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM webhook_delivery_attempts WHERE event_id = $1 ORDER BY attempted_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "event_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "attempted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "response_status",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "response_body",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "duration_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "success",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "78d16a2238e1ad6542f6c29142eeeb94241ad96aff6c58e929f4f3484fc7cca6"
+}

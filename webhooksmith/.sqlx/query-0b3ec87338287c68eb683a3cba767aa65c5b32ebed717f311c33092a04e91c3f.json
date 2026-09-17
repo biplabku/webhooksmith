@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhook_events SET status='delivering', delivering_since=NOW()-INTERVAL '6 seconds' WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b3ec87338287c68eb683a3cba767aa65c5b32ebed717f311c33092a04e91c3f"
+}

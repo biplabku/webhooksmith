@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webhook_events SET created_at = NOW() - INTERVAL '30 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "642f3c95fe769a6ffbf6c8ee05c5e9c2b684f182f621fc0823f54aca9e3cea23"
+}

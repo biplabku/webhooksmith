@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH claimed AS (\n            SELECT we.id\n            FROM webhook_events we\n            JOIN webhook_endpoints ep ON ep.id = we.endpoint_id\n            WHERE we.status IN ('pending', 'failed')\n              AND we.scheduled_at <= NOW()\n              AND ep.enabled = true\n            ORDER BY we.scheduled_at\n            LIMIT $1\n            FOR UPDATE OF we SKIP LOCKED\n        )\n        UPDATE webhook_events\n        SET status = 'delivering', delivering_since = NOW()\n        FROM claimed\n        WHERE webhook_events.id = claimed.id\n        RETURNING webhook_events.id,\n                  webhook_events.endpoint_id,\n                  webhook_events.event_type,\n                  webhook_events.payload,\n                  webhook_events.status as \"status: _\",\n                  webhook_events.attempts,\n                  webhook_events.scheduled_at,\n                  webhook_events.delivering_since,\n                  webhook_events.idempotency_key,\n                  webhook_events.created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "endpoint_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "payload",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "status: _",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "delivering_since",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "idempotency_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "2f2bdf928ea7810832dedcd78e2088f0d5465bed41ac06ac6efb57447f39f1c3"
+}

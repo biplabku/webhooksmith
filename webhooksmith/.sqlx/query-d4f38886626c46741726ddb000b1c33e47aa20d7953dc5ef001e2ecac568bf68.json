@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM webhook_events\n        WHERE status = 'delivered'\n          AND created_at < NOW() - ($1 || ' seconds')::INTERVAL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d4f38886626c46741726ddb000b1c33e47aa20d7953dc5ef001e2ecac568bf68"
+}
