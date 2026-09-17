@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webhook_delivery_attempts (event_id, error, success)\n         VALUES ($1, 'endpoint was deleted after event was claimed for delivery', false)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af8ee7e31c1cc8a4d5e25f38413c50e96080af08dba53c10c031daf94f6f034d"
+}

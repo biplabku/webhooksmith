@@ -1,0 +1,54 @@
+[workspace]
+members = [
+    "hooksmith-core",
+    "hooksmith-cli", "hooksmith-axum",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Biplab Das <biplabku@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/biplabku/hooksmith"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP client for delivery
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+
+# HMAC signing
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Retry / jitter
+rand = "0.8"
+subtle = "2"
+url = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+axum = "0.7"
+tower = "0.4"
+tower-layer = "0.3"
+http = "1"

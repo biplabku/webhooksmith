@@ -1,0 +1,304 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use uuid::Uuid;
+
+use crate::error::{HooksmithError, Result};
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Endpoint {
+    pub id: Uuid,
+    pub url: String,
+    pub signing_secret: String,
+    pub description: Option<String>,
+    pub enabled: bool,
+    pub max_attempts: i32,
+    pub initial_delay_ms: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewEndpoint {
+    pub url: String,
+    pub signing_secret: String,
+    pub description: Option<String>,
+    pub max_attempts: Option<i32>,
+    pub initial_delay_ms: Option<i32>,
+}
+
+impl NewEndpoint {
+    /// Validates all fields including URL SSRF protection.
+    /// Use for production endpoint creation.
+    pub fn validate(&self) -> Result<()> {
+        let url = self.url.parse::<url::Url>()
+            .map_err(|_| HooksmithError::Config(format!("invalid URL: {}", self.url)))?;
+
+        if url.scheme() != "https" && url.scheme() != "http" {
+            return Err(HooksmithError::Config(
+                "endpoint URL must use http or https".into(),
+            ));
+        }
+
+        let host = url.host_str().unwrap_or("");
+        if is_private_host(host) {
+            return Err(HooksmithError::Config(format!(
+                "endpoint URL must not target private or loopback addresses: {host}"
+            )));
+        }
+
+        self.validate_fields()
+    }
+
+    /// Validates fields only — skips the URL/SSRF check.
+    /// Used when `allow_insecure_urls` is set (local dev / tests).
+    pub(crate) fn validate_fields(&self) -> Result<()> {
+        if self.signing_secret.len() < 16 {
+            return Err(HooksmithError::Config(
+                "signing_secret must be at least 16 characters".into(),
+            ));
+        }
+
+        let max_attempts = self.max_attempts.unwrap_or(10);
+        if max_attempts < 1 {
+            return Err(HooksmithError::Config(
+                "max_attempts must be at least 1".into(),
+            ));
+        }
+
+        // Zero or negative initial_delay_ms causes incorrect retry behaviour:
+        // 0 → no backoff (hammers failing endpoint), negative → wraps on u32 cast
+        // giving multi-hour delays instead of exponential backoff.
+        if let Some(d) = self.initial_delay_ms {
+            if d < 1 {
+                return Err(HooksmithError::Config(
+                    "initial_delay_ms must be at least 1".into(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Returns true for hosts that must not be webhook targets (SSRF protection).
+pub fn is_private_host(host: &str) -> bool {
+    if host == "localhost" {
+        return true;
+    }
+    // Parse as IP to catch 127.0.0.1, ::1, 10.x, 172.16-31.x, 192.168.x, 169.254.x (link-local)
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback()
+            || ip.is_unspecified()
+            || is_private_ip(ip);
+    }
+    false
+}
+
+pub fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            // 10.0.0.0/8
+            o[0] == 10
+                // 172.16.0.0/12
+                || (o[0] == 172 && (16..=31).contains(&o[1]))
+                // 192.168.0.0/16
+                || (o[0] == 192 && o[1] == 168)
+                // 169.254.0.0/16 — link-local / AWS metadata
+                || (o[0] == 169 && o[1] == 254)
+                // 100.64.0.0/10 — shared address space (RFC 6598, carrier-grade NAT)
+                || (o[0] == 100 && (64..=127).contains(&o[1]))
+        }
+        std::net::IpAddr::V6(v6) => {
+            let s = v6.segments();
+            // ::1 loopback
+            v6.is_loopback()
+                // :: unspecified
+                || v6.is_unspecified()
+                // fc00::/7 — unique local (fd00:: etc.)
+                || (s[0] & 0xfe00) == 0xfc00
+                // fe80::/10 — link-local
+                || (s[0] & 0xffc0) == 0xfe80
+                // ::ffff:0:0/96 — IPv4-mapped (could map to private IPv4)
+                || (s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0
+                    && s[4] == 0 && s[5] == 0xffff
+                    && is_private_ip(std::net::IpAddr::V4(
+                        std::net::Ipv4Addr::new(
+                            (s[6] >> 8) as u8, s[6] as u8,
+                            (s[7] >> 8) as u8, s[7] as u8,
+                        )
+                    )))
+        }
+    }
+}
+
+/// Fields to update on an existing endpoint. Only provided fields are changed.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateEndpoint {
+    pub url: Option<String>,
+    pub signing_secret: Option<String>,
+    pub description: Option<Option<String>>, // Some(None) clears the description
+    pub enabled: Option<bool>,
+    pub max_attempts: Option<i32>,
+    pub initial_delay_ms: Option<i32>,
+}
+
+impl UpdateEndpoint {
+    pub(crate) fn validate(&self, allow_insecure_urls: bool) -> crate::error::Result<()> {
+        use crate::error::HooksmithError;
+
+        if let Some(url) = &self.url {
+            // Always validate URL structure — only skip the SSRF IP check.
+            let parsed = url
+                .parse::<url::Url>()
+                .map_err(|_| HooksmithError::Config(format!("invalid URL: {url}")))?;
+            if parsed.scheme() != "https" && parsed.scheme() != "http" {
+                return Err(HooksmithError::Config(
+                    "endpoint URL must use http or https".into(),
+                ));
+            }
+            if !allow_insecure_urls {
+                let host = parsed.host_str().unwrap_or("");
+                if is_private_host(host) {
+                    return Err(HooksmithError::Config(format!(
+                        "endpoint URL must not target private or loopback addresses: {host}"
+                    )));
+                }
+            }
+        }
+        if let Some(secret) = &self.signing_secret {
+            if secret.len() < 16 {
+                return Err(HooksmithError::Config(
+                    "signing_secret must be at least 16 characters".into(),
+                ));
+            }
+        }
+        if let Some(max) = self.max_attempts {
+            if max < 1 {
+                return Err(HooksmithError::Config(
+                    "max_attempts must be at least 1".into(),
+                ));
+            }
+        }
+        if let Some(d) = self.initial_delay_ms {
+            if d < 1 {
+                return Err(HooksmithError::Config(
+                    "initial_delay_ms must be at least 1".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum EventStatus {
+    Pending,
+    Delivering,
+    Delivered,
+    Failed,
+    Dead,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct WebhookEvent {
+    pub id: Uuid,
+    pub endpoint_id: Uuid,
+    pub event_type: String,
+    pub payload: serde_json::Value,
+    pub status: EventStatus,
+    pub attempts: i32,
+    pub scheduled_at: DateTime<Utc>,
+    pub delivering_since: Option<DateTime<Utc>>,
+    pub idempotency_key: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Counts of webhook events grouped by status. Useful for monitoring queue health.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct QueueStats {
+    pub pending: i64,
+    pub delivering: i64,
+    pub failed: i64,
+    pub dead: i64,
+    pub delivered: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DeliveryAttempt {
+    pub id: Uuid,
+    pub event_id: Uuid,
+    pub attempted_at: DateTime<Utc>,
+    pub response_status: Option<i32>,
+    pub response_body: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub error: Option<String>,
+    pub success: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_loopback() {
+        let e = NewEndpoint {
+            url: "http://localhost/webhook".into(),
+            signing_secret: "a_secure_secret_here".into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+        };
+        assert!(e.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_aws_metadata() {
+        let e = NewEndpoint {
+            url: "http://169.254.169.254/latest/meta-data".into(),
+            signing_secret: "a_secure_secret_here".into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+        };
+        assert!(e.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_private_ip() {
+        let e = NewEndpoint {
+            url: "http://192.168.1.1/hook".into(),
+            signing_secret: "a_secure_secret_here".into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+        };
+        assert!(e.validate().is_err());
+    }
+
+    #[test]
+    fn accepts_public_https() {
+        let e = NewEndpoint {
+            url: "https://api.example.com/webhooks".into(),
+            signing_secret: "a_secure_secret_here".into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+        };
+        assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_short_secret() {
+        let e = NewEndpoint {
+            url: "https://api.example.com/webhooks".into(),
+            signing_secret: "tooshort".into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+        };
+        assert!(e.validate().is_err());
+    }
+}

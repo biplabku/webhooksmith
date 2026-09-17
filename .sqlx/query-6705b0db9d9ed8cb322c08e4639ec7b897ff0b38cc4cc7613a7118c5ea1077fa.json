@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING *\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "signing_secret",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "initial_delay_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6705b0db9d9ed8cb322c08e4639ec7b897ff0b38cc4cc7613a7118c5ea1077fa"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE webhook_endpoints\n        SET\n            url             = COALESCE($2, url),\n            signing_secret  = COALESCE($3, signing_secret),\n            description     = CASE WHEN $4 THEN $5 ELSE description END,\n            enabled         = COALESCE($6, enabled),\n            max_attempts    = COALESCE($7, max_attempts),\n            initial_delay_ms = COALESCE($8, initial_delay_ms)\n        WHERE id = $1\n        RETURNING *\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "signing_secret",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "initial_delay_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "96998919bef59326f572d2cff277a5e6a8d2bd0f92543ae2d39a4a3072f9d9be"
+}
