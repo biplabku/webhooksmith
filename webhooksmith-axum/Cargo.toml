@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-webhooksmith = { path = "../webhooksmith" }
+webhooksmith = { version = "0.1", path = "../webhooksmith" }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-layer = { workspace = true }
