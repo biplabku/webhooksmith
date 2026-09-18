@@ -135,10 +135,18 @@ impl SqliteEngine {
         db::enqueue(&self.pool, endpoint_id, event_type, payload).await
     }
 
-    pub async fn send_in_tx(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<WebhookEvent> {
+    /// Enqueue an event.
+    ///
+    /// # SQLite limitation
+    ///
+    /// Unlike the Postgres backend, this does NOT provide true transactional outbox
+    /// semantics. The event is enqueued immediately using the pool connection, not
+    /// inside `tx`. Rolling back `tx` will NOT roll back the enqueued event.
+    ///
+    /// For true atomic outbox behaviour (event only exists if your business
+    /// transaction commits), use the Postgres [`WebhookEngine`](crate::WebhookEngine).
+    pub async fn send_in_tx(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, _tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<WebhookEvent> {
         crate::storage::validate_enqueue_public(event_type, &payload)?;
-        let _ = tx; // SQLite transactions are handled differently
-        // For SQLite, we use a simpler in-place enqueue
         db::enqueue(&self.pool, endpoint_id, event_type, payload).await
     }
 

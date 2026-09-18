@@ -13,29 +13,45 @@ automatic retry with exponential backoff, and dead letter queue. No external ser
 
 | Crate | Description |
 |---|---|
-| [`webhooksmith`](webhooksmith/) | Core engine — sending, delivery worker, DLQ, monitoring |
+| [`webhooksmith`](webhooksmith/) | Core engine — sending, delivery worker, DLQ, monitoring. Supports Postgres and SQLite. |
 | [`webhooksmith-axum`](webhooksmith-axum/) | Axum extractor for verifying incoming webhooks |
 
 ---
 
 ## How it works
 
-1. Register partner webhook endpoints in Postgres.
-2. Call `engine.send()` — the event is persisted atomically (transactional outbox).
+1. Register partner webhook endpoints in Postgres or SQLite.
+2. Call `engine.send()` — the event is persisted atomically.
 3. The background worker picks it up and POSTs it with an HMAC-SHA256 signature.
 4. On failure: exponential backoff → dead letter queue → manual retry.
 
-No Redis. No queuing service. Just your existing Postgres.
+No Redis. No queuing service. Just your existing database.
 
 ---
 
 ## Quick start
 
+**Postgres** (default — best for production, transactional outbox):
 ```toml
 [dependencies]
 webhooksmith = "0.1"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
+```
+
+**SQLite** (desktop apps, CLI tools, embedded, no Postgres needed):
+```toml
+[dependencies]
+webhooksmith = { version = "0.1", features = ["sqlite"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+```
+
+With SQLite, replace `WebhookEngine` with `SqliteEngine` — same API:
+```rust
+use webhooksmith::SqliteEngine;
+let engine = SqliteEngine::new("sqlite:webhooks.db").await?;
+engine.migrate().await?;
 ```
 
 ```rust

@@ -47,6 +47,8 @@ fn parse_status(s: &str) -> EventStatus {
     }
 }
 
+// status_str kept here for potential future use in filtered queries
+#[allow(dead_code)]
 fn status_str(s: &EventStatus) -> &'static str {
     match s {
         EventStatus::Pending    => "pending",
@@ -119,9 +121,6 @@ fn row_to_attempt(row: &sqlx::sqlite::SqliteRow) -> DeliveryAttempt {
 pub async fn create_endpoint(pool: &SqlitePool, new: NewEndpoint) -> Result<Endpoint> {
     let id = uuid_str();
     let now = now_str();
-    let payload_json = serde_json::Value::Null; // unused
-    let _ = payload_json;
-
     sqlx::query(
         "INSERT INTO webhook_endpoints
          (id, url, signing_secret, description, enabled, max_attempts, initial_delay_ms, created_at, updated_at)
