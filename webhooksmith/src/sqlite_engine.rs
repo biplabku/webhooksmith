@@ -181,6 +181,13 @@ impl SqliteEngine {
     /// For true atomic outbox behaviour (event only exists if your business
     /// transaction commits), use the Postgres [`WebhookEngine`](crate::WebhookEngine).
     pub async fn send_in_tx(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, _tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<WebhookEvent> {
+        // Warn once so this limitation is visible in logs.
+        // The event is enqueued immediately — rolling back _tx will NOT roll back the event.
+        tracing::warn!(
+            "SqliteEngine::send_in_tx does not provide transactional outbox semantics. \
+             The event is enqueued immediately and is NOT rolled back if `tx` is rolled back. \
+             Use WebhookEngine (Postgres) for true atomic outbox behaviour."
+        );
         crate::storage::validate_enqueue_public(event_type, &payload)?;
         db::enqueue(&self.pool, endpoint_id, event_type, payload).await
     }
