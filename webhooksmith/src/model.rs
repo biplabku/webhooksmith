@@ -28,7 +28,7 @@ pub struct Endpoint {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NewEndpoint {
     pub url: String,
     pub signing_secret: String,
