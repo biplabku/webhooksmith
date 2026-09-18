@@ -98,6 +98,31 @@ tx.commit().await?;  // webhook only queued if this succeeds
 
 ---
 
+## Event type filtering
+
+Each endpoint can subscribe to specific event types. `broadcast()` routes automatically — only matching endpoints receive the event.
+
+```rust
+// Subscribe to order events only
+engine.register_with(NewEndpoint {
+    event_filter: Some(vec!["order.*".into()]),
+    ..
+}).await?;
+
+// broadcast() routes — payment.captured does NOT go to order-only endpoints
+engine.broadcast("order.created", payload).await?;
+
+// Update filter at any time
+engine.set_event_filter(ep_id, vec!["order.*".into(), "payment.captured".into()]).await?;
+engine.clear_event_filter(ep_id).await?;  // back to receiving all
+```
+
+**Pattern rules:** `"order.created"` exact · `"order.*"` prefix · `"*"` all · `None` receive everything (default)
+
+`send()` to a specific endpoint always delivers — filter only applies to `broadcast()`.
+
+---
+
 ## All APIs at a glance
 
 **Sending:**
@@ -107,6 +132,7 @@ tx.commit().await?;  // webhook only queued if this succeeds
 **Endpoints:**
 `register` · `register_with` · `endpoint` · `list_endpoints` · `list_endpoints_paged`
 `update_endpoint` · `enable_endpoint` · `disable_endpoint` · `delete_endpoint`
+`set_event_filter` · `clear_event_filter`
 
 **Worker:**
 `run` · `run_graceful` · `run_once`
@@ -188,7 +214,7 @@ docker compose up -d
 DATABASE_URL=postgres://webhooksmith:webhooksmith@localhost:5432/webhooksmith cargo test
 ```
 
-187 tests covering unit, integration (real Postgres + real HTTP + in-memory SQLite), edge cases, adversarial, stress, and bombardment scenarios.
+203 tests covering unit, integration (real Postgres + real HTTP + in-memory SQLite), edge cases, adversarial, stress, bombardment, and event filter routing.
 
 ---
 

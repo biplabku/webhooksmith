@@ -138,6 +138,43 @@ WebhookEvent {
 
 ---
 
+## Event type filtering
+
+Each endpoint can subscribe to specific event types. `broadcast()` routes automatically.
+
+```rust
+// Register with a filter — only receives order events
+engine.register_with(webhooksmith::NewEndpoint {
+    url: "https://partner.com/hooks".into(),
+    signing_secret: "secret-min-16-chars".into(),
+    event_filter: Some(vec!["order.*".into()]),
+    ..Default::default()  // or specify each field
+}).await?;
+
+// Broadcast routes by subscription:
+// "order.created" → goes to endpoints subscribed to "order.*" or "*" or no filter
+// "payment.captured" → does NOT go to an endpoint subscribed only to "order.*"
+engine.broadcast("order.created", payload).await?;
+
+// Update filter at any time
+engine.set_event_filter(ep_id, vec!["order.*".into(), "payment.captured".into()]).await?;
+engine.clear_event_filter(ep_id).await?;  // receive all events again
+```
+
+**Pattern rules:**
+
+| Pattern | Matches |
+|---|---|
+| `"order.created"` | Exactly `"order.created"` |
+| `"order.*"` | Any event starting with `"order."` (e.g. `"order.created"`, `"order.cancelled"`) |
+| `"*"` | Everything |
+| `None` (no filter) | Everything — default, backward compatible |
+| `Some(vec![])` (empty) | Nothing |
+
+`send()` to a specific endpoint always delivers — the filter only applies to `broadcast()`.
+
+---
+
 ## Idempotency keys
 
 Protect against double-sends when your code retries on network errors.
