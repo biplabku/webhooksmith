@@ -17,8 +17,8 @@ pub async fn create_endpoint(pool: &PgPool, new: NewEndpoint) -> Result<Endpoint
     let endpoint = sqlx::query_as!(
         Endpoint,
         r#"
-        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms, event_filter)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         "#,
         new.url,
@@ -26,6 +26,7 @@ pub async fn create_endpoint(pool: &PgPool, new: NewEndpoint) -> Result<Endpoint
         new.description,
         new.max_attempts.unwrap_or(10),
         new.initial_delay_ms.unwrap_or(1000),
+        new.event_filter.as_deref(),
     )
     .fetch_one(pool)
     .await?;
@@ -39,8 +40,8 @@ pub async fn create_endpoint_unchecked(pool: &PgPool, new: NewEndpoint) -> Resul
     let endpoint = sqlx::query_as!(
         Endpoint,
         r#"
-        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms, event_filter)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         "#,
         new.url,
@@ -48,6 +49,7 @@ pub async fn create_endpoint_unchecked(pool: &PgPool, new: NewEndpoint) -> Resul
         new.description,
         new.max_attempts.unwrap_or(10),
         new.initial_delay_ms.unwrap_or(1000),
+        new.event_filter.as_deref(),
     )
     .fetch_one(pool)
     .await?;
@@ -64,28 +66,35 @@ pub(crate) async fn update_endpoint(
 ) -> Result<Endpoint> {
     update.validate(allow_insecure_urls)?;
 
+    // Extract event_filter values before the macro to avoid borrow-of-temporary errors.
+    let filter_set = update.event_filter.is_some();
+    let filter_value: Option<Vec<String>> = update.event_filter.flatten();
+
     let endpoint = sqlx::query_as!(
         Endpoint,
         r#"
         UPDATE webhook_endpoints
         SET
-            url             = COALESCE($2, url),
-            signing_secret  = COALESCE($3, signing_secret),
-            description     = CASE WHEN $4 THEN $5 ELSE description END,
-            enabled         = COALESCE($6, enabled),
-            max_attempts    = COALESCE($7, max_attempts),
-            initial_delay_ms = COALESCE($8, initial_delay_ms)
+            url              = COALESCE($2, url),
+            signing_secret   = COALESCE($3, signing_secret),
+            description      = CASE WHEN $4 THEN $5 ELSE description END,
+            enabled          = COALESCE($6, enabled),
+            max_attempts     = COALESCE($7, max_attempts),
+            initial_delay_ms = COALESCE($8, initial_delay_ms),
+            event_filter     = CASE WHEN $9 THEN $10 ELSE event_filter END
         WHERE id = $1
         RETURNING *
         "#,
         id,
         update.url,
         update.signing_secret,
-        update.description.is_some(),         // $4: whether to overwrite description
-        update.description.flatten(),         // $5: the new description value (or NULL)
+        update.description.is_some(),
+        update.description.flatten(),
         update.enabled,
         update.max_attempts,
         update.initial_delay_ms,
+        filter_set,
+        filter_value.as_deref(),
     )
     .fetch_optional(pool)
     .await?
@@ -246,6 +255,17 @@ pub(crate) async fn broadcast_idempotent(
         SELECT id, $1, $2, $3
         FROM webhook_endpoints
         WHERE enabled = true
+          AND (
+            event_filter IS NULL
+            OR '*' = ANY(event_filter)
+            OR $1 = ANY(event_filter)
+            OR EXISTS (
+                SELECT 1 FROM unnest(event_filter) AS pattern
+                WHERE pattern LIKE '%.*'
+                  AND ($1 = LEFT(pattern, LENGTH(pattern)-2)
+                    OR $1 LIKE LEFT(pattern, LENGTH(pattern)-2) || '.%')
+            )
+          )
         ON CONFLICT (endpoint_id, idempotency_key) WHERE idempotency_key IS NOT NULL
         DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
         RETURNING id, endpoint_id, event_type, payload,
@@ -268,6 +288,10 @@ pub(crate) async fn broadcast(
     payload: serde_json::Value,
 ) -> Result<Vec<WebhookEvent>> {
     validate_enqueue(event_type, &payload)?;
+    // Routing: endpoint receives the event if:
+    //   - event_filter IS NULL (subscribed to all events), OR
+    //   - event_type exactly matches one of the filter patterns, OR
+    //   - a pattern ends with '.*' and event_type starts with that prefix
     let events = sqlx::query_as!(
         WebhookEvent,
         r#"
@@ -275,6 +299,17 @@ pub(crate) async fn broadcast(
         SELECT id, $1, $2
         FROM webhook_endpoints
         WHERE enabled = true
+          AND (
+            event_filter IS NULL
+            OR '*' = ANY(event_filter)
+            OR $1 = ANY(event_filter)
+            OR EXISTS (
+                SELECT 1 FROM unnest(event_filter) AS pattern
+                WHERE pattern LIKE '%.*'
+                  AND ($1 = LEFT(pattern, LENGTH(pattern)-2)
+                    OR $1 LIKE LEFT(pattern, LENGTH(pattern)-2) || '.%')
+            )
+          )
         RETURNING id, endpoint_id, event_type, payload,
                   status as "status: _", attempts, scheduled_at, delivering_since, idempotency_key, created_at
         "#,
@@ -301,6 +336,17 @@ pub(crate) async fn broadcast_in_tx(
         SELECT id, $1, $2
         FROM webhook_endpoints
         WHERE enabled = true
+          AND (
+            event_filter IS NULL
+            OR '*' = ANY(event_filter)
+            OR $1 = ANY(event_filter)
+            OR EXISTS (
+                SELECT 1 FROM unnest(event_filter) AS pattern
+                WHERE pattern LIKE '%.*'
+                  AND ($1 = LEFT(pattern, LENGTH(pattern)-2)
+                    OR $1 LIKE LEFT(pattern, LENGTH(pattern)-2) || '.%')
+            )
+          )
         RETURNING id, endpoint_id, event_type, payload,
                   status as "status: _", attempts, scheduled_at, delivering_since, idempotency_key, created_at
         "#,

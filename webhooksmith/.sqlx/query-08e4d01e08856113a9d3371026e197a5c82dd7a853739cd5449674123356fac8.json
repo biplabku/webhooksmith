@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO webhook_events (endpoint_id, event_type, payload)\n        SELECT id, $1, $2\n        FROM webhook_endpoints\n        WHERE enabled = true\n        RETURNING id, endpoint_id, event_type, payload,\n                  status as \"status: _\", attempts, scheduled_at, delivering_since, idempotency_key, created_at\n        ",
+  "query": "\n        INSERT INTO webhook_events (endpoint_id, event_type, payload, idempotency_key)\n        SELECT id, $1, $2, $3\n        FROM webhook_endpoints\n        WHERE enabled = true\n          AND (\n            event_filter IS NULL\n            OR '*' = ANY(event_filter)\n            OR $1 = ANY(event_filter)\n            OR EXISTS (\n                SELECT 1 FROM unnest(event_filter) AS pattern\n                WHERE pattern LIKE '%.*'\n                  AND ($1 = LEFT(pattern, LENGTH(pattern)-2)\n                    OR $1 LIKE LEFT(pattern, LENGTH(pattern)-2) || '.%')\n            )\n          )\n        ON CONFLICT (endpoint_id, idempotency_key) WHERE idempotency_key IS NOT NULL\n        DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key\n        RETURNING id, endpoint_id, event_type, payload,\n                  status as \"status: _\", attempts, scheduled_at, delivering_since, idempotency_key, created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -57,7 +57,8 @@
     "parameters": {
       "Left": [
         "Text",
-        "Jsonb"
+        "Jsonb",
+        "Text"
       ]
     },
     "nullable": [
@@ -73,5 +74,5 @@
       false
     ]
   },
-  "hash": "abc1f4cda62108e292dcc429c42623b5388eefa8cefc95d0c4e0297657227f47"
+  "hash": "08e4d01e08856113a9d3371026e197a5c82dd7a853739cd5449674123356fac8"
 }

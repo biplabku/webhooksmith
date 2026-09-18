@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         description: Some("Customer A production endpoint".into()),
         max_attempts: Some(10),
         initial_delay_ms: Some(1000),
+            event_filter: None,
     }).await;
 
     // customer-a.com doesn't exist, so we'll simulate with a fake endpoint
@@ -59,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         description: Some("Customer B webhook".into()),
         max_attempts: Some(5),
         initial_delay_ms: Some(500),
+            event_filter: None,
     }).await;
 
     let customer_b_id = if let Ok(ep) = customer_b {

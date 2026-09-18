@@ -50,6 +50,7 @@ async fn exercise_endpoint_crud(pool: PgPool) {
             description: Some("endpoint two".into()),
             max_attempts: Some(5),
             initial_delay_ms: Some(500),
+            event_filter: None,
         })
         .await
         .unwrap();
@@ -117,6 +118,7 @@ async fn exercise_endpoint_crud(pool: PgPool) {
             description: None,
             max_attempts: Some(0),
             initial_delay_ms: None,
+            event_filter: None,
         })
         .await;
     assert!(bad2.is_err(), "max_attempts=0 must be rejected");

@@ -110,6 +110,7 @@ mod sqlite_tests {
             description: None,
             max_attempts: Some(1),
             initial_delay_ms: Some(1),
+            event_filter: None,
         }).await.unwrap();
 
         for i in 0..3 { e.send("test", json!({"i": i}), ep.id).await.unwrap(); }
@@ -143,6 +144,7 @@ mod sqlite_tests {
             description: None,
             max_attempts: Some(1),
             initial_delay_ms: Some(1),
+            event_filter: None,
         }).await.unwrap();
 
         let ev = e.send("test", json!({}), ep.id).await.unwrap();

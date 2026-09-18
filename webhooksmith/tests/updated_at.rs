@@ -238,6 +238,7 @@ async fn partial_update_leaves_other_fields_unchanged(pool: PgPool) {
             description: Some("original description".into()),
             max_attempts: Some(5),
             initial_delay_ms: Some(2000),
+            event_filter: None,
         })
         .await
         .unwrap();

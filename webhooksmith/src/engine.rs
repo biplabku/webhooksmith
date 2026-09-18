@@ -260,6 +260,7 @@ impl WebhookEngine {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         if self.allow_insecure_urls {
             storage::create_endpoint_unchecked(&self.pool, config).await
@@ -281,6 +282,33 @@ impl WebhookEngine {
     /// `updated_at` is set automatically by the database.
     pub async fn update_endpoint(&self, id: Uuid, update: UpdateEndpoint) -> Result<Endpoint> {
         storage::update_endpoint(&self.pool, id, update, self.allow_insecure_urls).await
+    }
+
+    /// Set the event type filter for an endpoint.
+    ///
+    /// Only events matching a pattern in the list will be delivered by `broadcast()`.
+    /// `send()` to a specific endpoint ID always delivers, ignoring the filter.
+    ///
+    /// Pattern rules: `"order.created"` exact, `"order.*"` prefix, `"*"` all.
+    pub async fn set_event_filter(&self, id: Uuid, patterns: Vec<String>) -> Result<Endpoint> {
+        storage::update_endpoint(
+            &self.pool,
+            id,
+            UpdateEndpoint { event_filter: Some(Some(patterns)), ..Default::default() },
+            self.allow_insecure_urls,
+        )
+        .await
+    }
+
+    /// Remove the event type filter — endpoint receives all events from `broadcast()` again.
+    pub async fn clear_event_filter(&self, id: Uuid) -> Result<Endpoint> {
+        storage::update_endpoint(
+            &self.pool,
+            id,
+            UpdateEndpoint { event_filter: Some(None), ..Default::default() },
+            self.allow_insecure_urls,
+        )
+        .await
     }
 
     /// Disable an endpoint — the worker will not claim its events until re-enabled.

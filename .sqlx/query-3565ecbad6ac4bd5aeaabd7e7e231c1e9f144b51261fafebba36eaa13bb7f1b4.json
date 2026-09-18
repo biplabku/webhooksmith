@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING *\n        ",
+  "query": "\n        INSERT INTO webhook_endpoints (url, signing_secret, description, max_attempts, initial_delay_ms, event_filter)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING *\n        ",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "event_filter",
+        "type_info": "TextArray"
       }
     ],
     "parameters": {
@@ -55,7 +60,8 @@
         "Text",
         "Text",
         "Int4",
-        "Int4"
+        "Int4",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -67,8 +73,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "6705b0db9d9ed8cb322c08e4639ec7b897ff0b38cc4cc7613a7118c5ea1077fa"
+  "hash": "3565ecbad6ac4bd5aeaabd7e7e231c1e9f144b51261fafebba36eaa13bb7f1b4"
 }

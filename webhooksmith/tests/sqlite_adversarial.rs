@@ -57,6 +57,7 @@ mod tests {
             description: None,
             max_attempts: Some(0),
             initial_delay_ms: None,
+            event_filter: None,
         }).await;
         assert!(result.is_err(), "max_attempts=0 must be rejected");
     }
@@ -70,6 +71,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: Some(0),
+            event_filter: None,
         }).await;
         assert!(result.is_err(), "initial_delay_ms=0 must be rejected");
     }
@@ -240,6 +242,7 @@ mod tests {
             description: None,
             max_attempts: Some(1),
             initial_delay_ms: Some(1),
+            event_filter: None,
         }).await.unwrap();
 
         // Send 5: 3 will succeed, 2 will fail → dead

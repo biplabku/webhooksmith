@@ -180,6 +180,7 @@ async fn max_attempts_zero_is_rejected(pool: PgPool) {
         description: None,
         max_attempts: Some(0),
         initial_delay_ms: None,
+            event_filter: None,
     }).await;
 
     assert!(result.is_err());

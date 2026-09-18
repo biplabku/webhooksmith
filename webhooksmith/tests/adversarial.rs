@@ -494,7 +494,8 @@ async fn initial_delay_ms_zero_is_rejected(pool: PgPool) {
         signing_secret: "adversarial_test_secret_32chars".into(),
         description: None,
         max_attempts: None,
-        initial_delay_ms: Some(0), // must be rejected: 0 = no backoff
+        initial_delay_ms: Some(0),
+            event_filter: None, // must be rejected: 0 = no backoff
     }).await;
     assert!(result.is_err(), "initial_delay_ms=0 must be rejected");
 }
@@ -507,7 +508,8 @@ async fn initial_delay_ms_negative_is_rejected(pool: PgPool) {
         signing_secret: "adversarial_test_secret_32chars".into(),
         description: None,
         max_attempts: None,
-        initial_delay_ms: Some(-1), // must be rejected: wraps to u32::MAX on cast
+        initial_delay_ms: Some(-1),
+            event_filter: None, // must be rejected: wraps to u32::MAX on cast
     }).await;
     assert!(result.is_err(), "initial_delay_ms=-1 must be rejected");
 }
@@ -520,7 +522,8 @@ async fn initial_delay_ms_one_is_accepted(pool: PgPool) {
         signing_secret: "adversarial_test_secret_32chars".into(),
         description: None,
         max_attempts: None,
-        initial_delay_ms: Some(1), // minimum valid value
+        initial_delay_ms: Some(1),
+            event_filter: None, // minimum valid value
     }).await;
     assert!(result.is_ok(), "initial_delay_ms=1 must be accepted");
 }

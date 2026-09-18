@@ -1,0 +1,258 @@
+//! Event type filtering tests — verifies that broadcast() routes events
+//! only to endpoints whose event_filter matches the event type.
+
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
+
+use webhooksmith::{EventStatus, NewEndpoint, WebhookEngine, event_matches_filter};
+use serde_json::json;
+use sqlx::PgPool;
+use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+
+fn engine(pool: PgPool) -> WebhookEngine {
+    WebhookEngine::builder()
+        .pool(pool)
+        .allow_insecure_urls()
+        .build_sync()
+}
+
+async fn endpoint_with_filter(engine: &WebhookEngine, url: &str, filter: Option<Vec<&str>>) -> uuid::Uuid {
+    let ep = engine.register_with(NewEndpoint {
+        url: url.into(),
+        signing_secret: "filter_test_secret_32chars_ok___".into(),
+        description: None,
+        max_attempts: None,
+        initial_delay_ms: None,
+        event_filter: filter.map(|f| f.into_iter().map(String::from).collect()),
+    }).await.unwrap();
+    ep.id
+}
+
+// ── Unit tests: pattern matching logic ────────────────────────────────────────
+
+#[test]
+fn no_filter_matches_everything() {
+    assert!(event_matches_filter("order.created", &None));
+    assert!(event_matches_filter("payment.captured", &None));
+    assert!(event_matches_filter("anything", &None));
+}
+
+#[test]
+fn empty_filter_matches_nothing() {
+    assert!(!event_matches_filter("order.created", &Some(vec![])));
+}
+
+#[test]
+fn wildcard_star_matches_all() {
+    let f = Some(vec!["*".to_string()]);
+    assert!(event_matches_filter("order.created", &f));
+    assert!(event_matches_filter("anything", &f));
+}
+
+#[test]
+fn exact_match_only_matches_that_type() {
+    let f = Some(vec!["order.created".to_string()]);
+    assert!(event_matches_filter("order.created", &f));
+    assert!(!event_matches_filter("order.updated", &f));
+    assert!(!event_matches_filter("payment.captured", &f));
+}
+
+#[test]
+fn prefix_star_matches_correct_namespace() {
+    let f = Some(vec!["order.*".to_string()]);
+    assert!(event_matches_filter("order.created", &f));
+    assert!(event_matches_filter("order.updated", &f));
+    assert!(event_matches_filter("order.cancelled", &f));
+    assert!(!event_matches_filter("payment.captured", &f));
+    assert!(!event_matches_filter("orderx.created", &f)); // prefix must match "order."
+}
+
+#[test]
+fn prefix_matches_exact_prefix_too() {
+    // "order.*" should also match exactly "order" (the prefix itself)
+    let f = Some(vec!["order.*".to_string()]);
+    assert!(event_matches_filter("order", &f));
+}
+
+#[test]
+fn multiple_patterns_any_match_succeeds() {
+    let f = Some(vec!["order.*".to_string(), "payment.captured".to_string()]);
+    assert!(event_matches_filter("order.created", &f));
+    assert!(event_matches_filter("payment.captured", &f));
+    assert!(!event_matches_filter("payment.failed", &f));
+    assert!(!event_matches_filter("shipment.dispatched", &f));
+}
+
+// ── Integration: broadcast() routes by filter ─────────────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn broadcast_respects_event_filter(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let engine = engine(pool);
+    let url = format!("{}/hook", server.uri());
+
+    // Endpoint A: subscribed to "order.*"
+    endpoint_with_filter(&engine, &url, Some(vec!["order.*"])).await;
+
+    // Endpoint B: subscribed only to "payment.captured"
+    endpoint_with_filter(&engine, &url, Some(vec!["payment.captured"])).await;
+
+    // Endpoint C: no filter — receives everything
+    endpoint_with_filter(&engine, &url, None).await;
+
+    // Broadcast "order.created"
+    let events = engine.broadcast("order.created", json!({})).await.unwrap();
+    // Should go to: endpoint A (matches "order.*") + endpoint C (no filter)
+    // Should NOT go to: endpoint B (subscribed only to payment.captured)
+    assert_eq!(events.len(), 2, "order.created must go to A and C, not B");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn broadcast_payment_event_routes_correctly(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let engine = engine(pool);
+    let url = format!("{}/hook", server.uri());
+
+    endpoint_with_filter(&engine, &url, Some(vec!["order.*"])).await;          // A
+    endpoint_with_filter(&engine, &url, Some(vec!["payment.captured"])).await; // B
+    endpoint_with_filter(&engine, &url, None).await;                            // C
+
+    let events = engine.broadcast("payment.captured", json!({})).await.unwrap();
+    // Should go to: B (exact match) + C (no filter)
+    // Should NOT go to: A (order.* doesn't match payment.captured)
+    assert_eq!(events.len(), 2, "payment.captured must go to B and C, not A");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn broadcast_unsubscribed_event_only_reaches_unfiltered_endpoints(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let engine = engine(pool);
+    let url = format!("{}/hook", server.uri());
+
+    endpoint_with_filter(&engine, &url, Some(vec!["order.*"])).await;
+    endpoint_with_filter(&engine, &url, Some(vec!["payment.*"])).await;
+    endpoint_with_filter(&engine, &url, None).await; // receives everything
+
+    // "shipment.dispatched" matches neither order.* nor payment.*
+    let events = engine.broadcast("shipment.dispatched", json!({})).await.unwrap();
+    assert_eq!(events.len(), 1, "shipment.dispatched only goes to unfiltered endpoint");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn empty_filter_receives_nothing_from_broadcast(pool: PgPool) {
+    let engine = engine(pool);
+    let server = MockServer::start().await;
+    let url = format!("{}/hook", server.uri());
+
+    endpoint_with_filter(&engine, &url, Some(vec![])).await; // empty = receives nothing
+
+    let events = engine.broadcast("any.event", json!({})).await.unwrap();
+    assert_eq!(events.len(), 0, "empty filter must receive nothing");
+}
+
+// ── set_event_filter and clear_event_filter ───────────────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn set_and_clear_event_filter(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let engine = engine(pool);
+    let url = format!("{}/hook", server.uri());
+    let ep_id = endpoint_with_filter(&engine, &url, None).await; // starts with no filter
+
+    // Set filter to only receive order events
+    engine.set_event_filter(ep_id, vec!["order.*".into()]).await.unwrap();
+
+    // payment event should NOT be delivered
+    let events = engine.broadcast("payment.captured", json!({})).await.unwrap();
+    assert_eq!(events.len(), 0, "filtered endpoint must not receive payment.captured");
+
+    // order event should be delivered
+    let events2 = engine.broadcast("order.created", json!({})).await.unwrap();
+    assert_eq!(events2.len(), 1, "filtered endpoint must receive order.created");
+
+    // Clear filter — back to receiving everything
+    engine.clear_event_filter(ep_id).await.unwrap();
+    let events3 = engine.broadcast("payment.captured", json!({})).await.unwrap();
+    assert_eq!(events3.len(), 1, "unfiltered endpoint must receive all events again");
+}
+
+// ── send() bypasses filter ────────────────────────────────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn send_bypasses_event_filter(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let engine = engine(pool);
+    let url = format!("{}/hook", server.uri());
+
+    // Endpoint subscribed only to "order.*"
+    let ep_id = endpoint_with_filter(&engine, &url, Some(vec!["order.*"])).await;
+
+    // Directly send a payment event — filter is irrelevant for explicit send()
+    let ev = engine.send("payment.captured", json!({}), ep_id).await.unwrap();
+    engine.run_once().await.unwrap();
+
+    let after = engine.event(ev.id).await.unwrap().unwrap();
+    assert_eq!(after.status, EventStatus::Delivered,
+        "send() must deliver regardless of event_filter");
+}
+
+// ── Wildcard star ─────────────────────────────────────────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn wildcard_star_filter_receives_everything(pool: PgPool) {
+    let engine = engine(pool);
+    let server = MockServer::start().await;
+    let url = format!("{}/hook", server.uri());
+
+    endpoint_with_filter(&engine, &url, Some(vec!["*"])).await;
+
+    let e1 = engine.broadcast("order.created", json!({})).await.unwrap();
+    let e2 = engine.broadcast("payment.captured", json!({})).await.unwrap();
+    let e3 = engine.broadcast("anything.at.all", json!({})).await.unwrap();
+
+    assert_eq!(e1.len(), 1);
+    assert_eq!(e2.len(), 1);
+    assert_eq!(e3.len(), 1);
+}
+
+// ── Existing endpoints (no filter column) still work ─────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn backward_compatible_no_filter_receives_all(pool: PgPool) {
+    let engine = engine(pool);
+    let server = MockServer::start().await;
+    let url = format!("{}/hook", server.uri());
+
+    // Register with no event_filter — existing behaviour
+    engine.register(&url, "filter_test_secret_32chars_ok___").await.unwrap();
+
+    let events = engine.broadcast("order.created", json!({})).await.unwrap();
+    assert_eq!(events.len(), 1, "endpoint with no filter must receive all events");
+
+    let events2 = engine.broadcast("payment.captured", json!({})).await.unwrap();
+    assert_eq!(events2.len(), 1);
+}

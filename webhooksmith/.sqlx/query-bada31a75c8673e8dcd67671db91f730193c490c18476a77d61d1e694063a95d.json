@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "event_filter",
+        "type_info": "TextArray"
       }
     ],
     "parameters": {
@@ -63,7 +68,8 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
   "hash": "bada31a75c8673e8dcd67671db91f730193c490c18476a77d61d1e694063a95d"

@@ -14,6 +14,16 @@ pub struct Endpoint {
     pub enabled: bool,
     pub max_attempts: i32,
     pub initial_delay_ms: i32,
+    /// Optional list of event type patterns this endpoint subscribes to.
+    ///
+    /// `None` = receive all events from `broadcast()` (default).
+    /// `Some(vec!["order.*", "payment.captured"])` = only matching events.
+    ///
+    /// Pattern rules:
+    /// - `"order.created"` — exact match
+    /// - `"order.*"` — any event starting with `"order."`
+    /// - `"*"` — matches all events
+    pub event_filter: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -25,6 +35,8 @@ pub struct NewEndpoint {
     pub description: Option<String>,
     pub max_attempts: Option<i32>,
     pub initial_delay_ms: Option<i32>,
+    /// Event type filter for `broadcast()`. `None` = receive all events.
+    pub event_filter: Option<Vec<String>>,
 }
 
 impl NewEndpoint {
@@ -78,6 +90,28 @@ impl NewEndpoint {
         }
 
         Ok(())
+    }
+}
+
+/// Returns true if `event_type` matches any pattern in `filter`.
+///
+/// Pattern rules:
+/// - `"order.created"` — exact match
+/// - `"order.*"` — any event whose type starts with `"order."`
+/// - `"*"` — matches everything
+///
+/// `None` filter means "receive all" — always returns true.
+pub fn event_matches_filter(event_type: &str, filter: &Option<Vec<String>>) -> bool {
+    match filter {
+        None => true, // no filter = receive all events
+        Some(patterns) if patterns.is_empty() => false, // empty list = receive nothing
+        Some(patterns) => patterns.iter().any(|p| {
+            if p == "*" { return true; }
+            if let Some(prefix) = p.strip_suffix(".*") {
+                return event_type == prefix || event_type.starts_with(&format!("{prefix}."));
+            }
+            event_type == p
+        }),
     }
 }
 
@@ -142,6 +176,9 @@ pub struct UpdateEndpoint {
     pub enabled: Option<bool>,
     pub max_attempts: Option<i32>,
     pub initial_delay_ms: Option<i32>,
+    /// `Some(None)` clears the filter (endpoint receives all events again).
+    /// `Some(Some(vec!["order.*"]))` sets a new filter.
+    pub event_filter: Option<Option<Vec<String>>>,
 }
 
 impl UpdateEndpoint {
@@ -250,6 +287,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         assert!(e.validate().is_err());
     }
@@ -262,6 +300,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         assert!(e.validate().is_err());
     }
@@ -274,6 +313,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         assert!(e.validate().is_err());
     }
@@ -286,6 +326,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         assert!(e.validate().is_ok());
     }
@@ -298,6 +339,7 @@ mod tests {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         assert!(e.validate().is_err());
     }
