@@ -3,6 +3,7 @@
 Webhook delivery for Rust backed by Postgres or SQLite. Atomic outbox writes, HMAC-SHA256 signing,
 automatic retry with exponential backoff, and dead letter queue. No external services.
 
+**Postgres backend (default — best for production, transactional outbox):**
 ```toml
 [dependencies]
 webhooksmith = "0.1"
@@ -10,16 +11,33 @@ tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 ```
 
+**SQLite backend (desktop apps, CLI tools, embedded — no Postgres needed):**
+```toml
+[dependencies]
+webhooksmith = { version = "0.1", features = ["sqlite"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+```
+
+With SQLite, use `SqliteEngine` — same API as `WebhookEngine`:
+```rust
+use webhooksmith::SqliteEngine;
+
+let engine = SqliteEngine::new("sqlite:webhooks.db").await?;
+engine.migrate().await?;
+// All the same methods: send, broadcast, retry_dead, queue_stats, etc.
+```
+
 ---
 
 ## How it works
 
-1. Your app registers partner webhook endpoints in Postgres.
-2. When an event happens, you call `engine.send()` — the event is saved to Postgres.
+1. Your app registers partner webhook endpoints in Postgres or SQLite.
+2. When an event happens, you call `engine.send()` — the event is saved to your database.
 3. The background worker picks it up and POSTs it with an HMAC-SHA256 signature.
 4. Failures retry with exponential backoff. After `max_attempts` failures, the event moves to a dead-letter queue.
 
-No Redis, no queuing service, no external infrastructure. Just your existing Postgres.
+No Redis, no queuing service, no external infrastructure. Just your existing database.
 
 ---
 
@@ -437,7 +455,7 @@ webhook_events     -- outbound events, one row per (endpoint, event)
 webhook_delivery_attempts  -- log of every HTTP call made
 ```
 
-All tables use UUIDs as primary keys and `TIMESTAMPTZ` for timestamps.
+All tables use UUIDs as primary keys. Postgres uses `TIMESTAMPTZ`; SQLite stores timestamps as ISO 8601 TEXT.
 The `webhook_events` table has a partial index on `(status, scheduled_at)` for efficient worker queries.
 
 ---
@@ -445,7 +463,8 @@ The `webhook_events` table has a partial index on `(status, scheduled_at)` for e
 ## How-to examples
 
 ```bash
-docker compose up -d   # start Postgres
+# Postgres examples need Docker:
+docker compose up -d
 
 # Minimal setup — connect, register, send, deliver
 cargo run --example basic -p webhooksmith
@@ -466,12 +485,15 @@ cargo run --example monitoring -p webhooksmith
 cargo run --example demo -p webhooksmith
 ```
 
+**SQLite examples need no setup** — just pass a file path or `sqlite::memory:`.
+
 ---
 
 ## Requirements
 
 - Rust 1.75+
-- Postgres 14+ (`gen_random_uuid()`, `FOR UPDATE SKIP LOCKED`, partial unique indexes, triggers)
+- **Postgres backend (default):** Postgres 14+ (`gen_random_uuid()`, `FOR UPDATE SKIP LOCKED`, partial unique indexes, triggers)
+- **SQLite backend:** SQLite 3.35+ (supports `RETURNING`; WAL mode enabled automatically)
 
 ---
 

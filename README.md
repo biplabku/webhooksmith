@@ -188,14 +188,15 @@ docker compose up -d
 DATABASE_URL=postgres://webhooksmith:webhooksmith@localhost:5432/webhooksmith cargo test
 ```
 
-159 tests covering unit, integration (real Postgres + real HTTP), edge cases, adversarial, stress, and bombardment scenarios.
+187 tests covering unit, integration (real Postgres + real HTTP + in-memory SQLite), edge cases, adversarial, stress, and bombardment scenarios.
 
 ---
 
 ## Requirements
 
 - Rust 1.75+
-- Postgres 14+
+- **Postgres backend (default):** Postgres 14+
+- **SQLite backend:** SQLite 3.35+ (no extra setup — just a file path)
 
 ## License
 
