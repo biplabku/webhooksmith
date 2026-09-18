@@ -227,6 +227,10 @@ async fn wildcard_star_filter_receives_everything(pool: PgPool) {
     let engine = engine(pool);
     let server = MockServer::start().await;
     let url = format!("{}/hook", server.uri());
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
 
     endpoint_with_filter(&engine, &url, Some(vec!["*"])).await;
 
@@ -239,15 +243,13 @@ async fn wildcard_star_filter_receives_everything(pool: PgPool) {
     assert_eq!(e3.len(), 1);
 }
 
-// ── Existing endpoints (no filter column) still work ─────────────────────────
+// ── Backward compatible ───────────────────────────────────────────────────────
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn backward_compatible_no_filter_receives_all(pool: PgPool) {
     let engine = engine(pool);
     let server = MockServer::start().await;
     let url = format!("{}/hook", server.uri());
-
-    // Register with no event_filter — existing behaviour
     engine.register(&url, "filter_test_secret_32chars_ok___").await.unwrap();
 
     let events = engine.broadcast("order.created", json!({})).await.unwrap();
@@ -255,4 +257,67 @@ async fn backward_compatible_no_filter_receives_all(pool: PgPool) {
 
     let events2 = engine.broadcast("payment.captured", json!({})).await.unwrap();
     assert_eq!(events2.len(), 1);
+}
+
+// ── event_filter pattern validation ──────────────────────────────────────────
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn empty_pattern_in_filter_rejected(pool: PgPool) {
+    let e = engine(pool);
+    let result = e.register_with(webhooksmith::NewEndpoint {
+        url: "https://example.com/hook".into(),
+        signing_secret: "filter_test_secret_32chars_ok___".into(),
+        event_filter: Some(vec!["order.*".into(), "".into()]),
+        ..Default::default()
+    }).await;
+    assert!(result.is_err(), "empty string pattern must be rejected");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn trailing_dot_pattern_rejected(pool: PgPool) {
+    let e = engine(pool);
+    let result = e.register_with(webhooksmith::NewEndpoint {
+        url: "https://example.com/hook".into(),
+        signing_secret: "filter_test_secret_32chars_ok___".into(),
+        event_filter: Some(vec!["order.".into()]),
+        ..Default::default()
+    }).await;
+    assert!(result.is_err(), "trailing dot without * must be rejected — use 'order.*'");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn valid_patterns_accepted(pool: PgPool) {
+    let e = engine(pool);
+    let result = e.register_with(webhooksmith::NewEndpoint {
+        url: "https://example.com/hook".into(),
+        signing_secret: "filter_test_secret_32chars_ok___".into(),
+        event_filter: Some(vec!["order.created".into(), "order.*".into(), "*".into()]),
+        ..Default::default()
+    }).await;
+    assert!(result.is_ok(), "valid patterns must be accepted");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn control_char_in_pattern_rejected(pool: PgPool) {
+    let e = engine(pool);
+    let result = e.register_with(webhooksmith::NewEndpoint {
+        url: "https://example.com/hook".into(),
+        signing_secret: "filter_test_secret_32chars_ok___".into(),
+        event_filter: Some(vec!["order\ncreated".into()]),
+        ..Default::default()
+    }).await;
+    assert!(result.is_err(), "control char in pattern must be rejected");
+}
+
+#[test]
+fn newendpoint_default_works_for_struct_update_syntax() {
+    let ep = webhooksmith::NewEndpoint {
+        url: "https://example.com/hook".into(),
+        signing_secret: "valid_secret_32chars_min________".into(),
+        ..Default::default()
+    };
+    assert_eq!(ep.description, None);
+    assert_eq!(ep.max_attempts, None);
+    assert_eq!(ep.initial_delay_ms, None);
+    assert_eq!(ep.event_filter, None);
 }

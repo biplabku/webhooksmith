@@ -89,6 +89,29 @@ impl NewEndpoint {
             }
         }
 
+        // Validate event_filter patterns: no empty strings, no control chars.
+        // Valid: "order.created", "order.*", "*"
+        // Invalid: "", "order.", "  "
+        if let Some(patterns) = &self.event_filter {
+            for p in patterns {
+                if p.trim().is_empty() {
+                    return Err(HooksmithError::Config(
+                        "event_filter patterns must not be empty".into(),
+                    ));
+                }
+                if p.ends_with('.') && !p.ends_with(".*") {
+                    return Err(HooksmithError::Config(format!(
+                        "invalid event_filter pattern '{p}': use '*' for wildcard, not trailing dot"
+                    )));
+                }
+                if p.chars().any(|c| (c as u32) < 0x20 || c == '\x7f') {
+                    return Err(HooksmithError::Config(
+                        "event_filter patterns must not contain control characters".into(),
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 }
