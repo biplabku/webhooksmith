@@ -64,6 +64,7 @@ impl SqliteEngine {
         let migrations = [
             include_str!("../migrations-sqlite/0001_initial.sql"),
             include_str!("../migrations-sqlite/0002_event_filter.sql"),
+            include_str!("../migrations-sqlite/0003_circuit_breaker.sql"),
         ];
         for sql in &migrations {
             // SQLite doesn't support "ADD COLUMN IF NOT EXISTS" directly, so we
@@ -170,29 +171,13 @@ impl SqliteEngine {
         db::enqueue(&self.pool, endpoint_id, event_type, payload).await
     }
 
-    /// Enqueue an event.
+    /// Enqueue inside an existing SQLite transaction — true transactional outbox.
     ///
-    /// # SQLite limitation
-    ///
-    /// Unlike the Postgres backend, this does NOT provide true transactional outbox
-    /// semantics. The event is enqueued immediately using the pool connection, not
-    /// inside `tx`. Rolling back `tx` will NOT roll back the enqueued event.
-    ///
-    /// For true atomic outbox behaviour (event only exists if your business
-    /// transaction commits), use the Postgres [`WebhookEngine`](crate::WebhookEngine).
-    pub async fn send_in_tx(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, _tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<WebhookEvent> {
-        // Warn only once per process — avoid flooding logs in hot paths.
-        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            tracing::warn!(
-                "SqliteEngine::send_in_tx does not provide transactional outbox semantics. \
-                 The event is enqueued immediately and is NOT rolled back if `tx` is rolled back. \
-                 Use WebhookEngine (Postgres) for true atomic outbox behaviour. \
-                 (This warning fires once per process.)"
-            );
-        }
+    /// The event is written using the transaction's connection. If `tx` is rolled back,
+    /// the event is also rolled back. If `tx` commits, the event is persisted.
+    pub async fn send_in_tx(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<WebhookEvent> {
         crate::storage::validate_enqueue_public(event_type, &payload)?;
-        db::enqueue(&self.pool, endpoint_id, event_type, payload).await
+        db::enqueue_in_sqlite_tx(tx, endpoint_id, event_type, payload).await
     }
 
     pub async fn send_idempotent(&self, event_type: &str, payload: serde_json::Value, endpoint_id: Uuid, key: &str) -> Result<WebhookEvent> {
@@ -450,12 +435,12 @@ async fn deliver_sqlite_event(
             if (200..300).contains(&status) {
                 db::record_success(pool, event.id, status, body, duration_ms).await?;
             } else {
-                db::record_failure(pool, event.id, endpoint.max_attempts, endpoint.initial_delay_ms,
+                db::record_failure(pool, event.id, endpoint.id, endpoint.max_attempts, endpoint.initial_delay_ms,
                     format!("HTTP {status}"), Some(status), Some(duration_ms)).await?;
             }
         }
         Err(e) => {
-            db::record_failure(pool, event.id, endpoint.max_attempts, endpoint.initial_delay_ms,
+            db::record_failure(pool, event.id, endpoint.id, endpoint.max_attempts, endpoint.initial_delay_ms,
                 e.to_string(), None, Some(duration_ms)).await?;
         }
     }

@@ -31,6 +31,9 @@
 //!     .layer(WebhookSecretLayer::new("your-signing-secret"));
 //! ```
 
+mod admin;
+pub use admin::admin;
+
 use axum::{
     async_trait,
     extract::{FromRequest, Request},

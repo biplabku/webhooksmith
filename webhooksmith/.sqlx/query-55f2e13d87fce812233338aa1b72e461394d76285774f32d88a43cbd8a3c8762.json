@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE webhook_endpoints\n                SET consecutive_failures = 0, circuit_open_until = NULL\n                WHERE id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55f2e13d87fce812233338aa1b72e461394d76285774f32d88a43cbd8a3c8762"
+}

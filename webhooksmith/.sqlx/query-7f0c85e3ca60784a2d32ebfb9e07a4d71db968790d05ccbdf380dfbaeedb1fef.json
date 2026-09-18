@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE webhook_endpoints\n        SET consecutive_failures = consecutive_failures + 1,\n            circuit_open_until = CASE\n                WHEN consecutive_failures + 1 >= 5\n                THEN NOW() + (LEAST(POWER(2, consecutive_failures + 1 - 5), 64) * INTERVAL '5 minutes')\n                ELSE NULL\n            END\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f0c85e3ca60784a2d32ebfb9e07a4d71db968790d05ccbdf380dfbaeedb1fef"
+}

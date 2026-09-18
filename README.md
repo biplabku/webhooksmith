@@ -15,7 +15,8 @@ Postgres backend: full transactional outbox (atomic writes). SQLite backend: per
 | Crate | Description |
 |---|---|
 | [`webhooksmith`](webhooksmith/) | Core engine — sending, delivery worker, DLQ, monitoring. Supports Postgres and SQLite. |
-| [`webhooksmith-axum`](webhooksmith-axum/) | Axum extractor for verifying incoming webhooks |
+| [`webhooksmith-axum`](webhooksmith-axum/) | Axum extractor for verifying incoming webhooks + admin HTTP router |
+| [`webhooksmith-actix`](webhooksmith-actix/) | Actix-web extractor for verifying incoming webhooks |
 
 ---
 
@@ -155,20 +156,23 @@ engine.clear_event_filter(ep_id).await?;  // back to receiving all
 
 | Property | Detail |
 |---|---|
-| **Transactional outbox** | Business data and webhook event written atomically — no phantom events, no silent drops (Postgres) |
+| **Transactional outbox** | Business data and webhook event written atomically — no phantom events, no silent drops (Postgres + SQLite) |
+| **Circuit breaker** | After 5 consecutive failures, endpoint paused with exponential backoff (5→10→20 min, capped at 320) |
 | **Idempotency keys** | `send_idempotent("order.created", payload, endpoint_id, "order-1001")` — safe to retry, never duplicates |
 | **Event type filtering** | Endpoints subscribe to `"order.*"` or `"payment.captured"` — `broadcast()` routes automatically |
+| **Admin HTTP API** | `webhooksmith_axum::admin(engine)` — stats, endpoint list, DLQ inspection, bulk retry |
 | **Graceful shutdown** | `run_graceful(ctrl_c_signal)` — current batch drains before exit (Kubernetes-safe) |
 | **SSRF protection** | Private IPs, loopback, link-local blocked at registration AND at delivery (DNS rebinding protection) |
 | **HMAC-SHA256 signing** | Constant-time verification, replay protection, Svix-compatible format |
 | **Dead letter queue** | Events that exhaust retries are inspectable and requeueable, not silently dropped |
 | **Multi-backend** | Postgres (full transactional outbox) or SQLite (no Postgres required) |
+| **Multi-framework receiver** | Verify incoming webhooks in axum (`webhooksmith-axum`) or actix-web (`webhooksmith-actix`) |
 
 ---
 
 ## Receiving webhooks
 
-Add `webhooksmith-axum` to verify incoming signatures in an axum handler:
+### axum
 
 ```toml
 [dependencies]
@@ -194,6 +198,45 @@ let app: Router = Router::new()
 ```
 
 → [webhooksmith-axum README](webhooksmith-axum/README.md)
+
+### actix-web
+
+```toml
+[dependencies]
+webhooksmith-actix = "0.1"
+```
+
+```rust
+use actix_web::{web, App, HttpResponse, Responder};
+use webhooksmith_actix::{WebhookSecret, TypedWebhook};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct OrderCreated { id: u64 }
+
+async fn handle(webhook: TypedWebhook<OrderCreated>) -> impl Responder {
+    println!("order: {}", webhook.payload.id);
+    HttpResponse::Ok().finish()
+}
+
+App::new()
+    .app_data(WebhookSecret::new("your-signing-secret"))
+    .route("/webhooks", web::post().to(handle))
+```
+
+→ [webhooksmith-actix README](webhooksmith-actix/README.md)
+
+### Admin panel (axum)
+
+```rust
+use webhooksmith_axum::admin;
+
+let app = Router::new()
+    .nest("/admin", admin(Arc::clone(&engine)));
+// GET /admin/stats, GET /admin/endpoints, GET /admin/dlq/:id, POST /admin/dlq/:id/retry-all
+```
+
+→ [Admin API docs](docs/03-admin-api.md)
 
 ---
 
@@ -223,14 +266,28 @@ cargo run --example demo -p webhooksmith
 
 ---
 
+## How-to guides
+
+| Guide | Topic |
+|-------|-------|
+| [01 — Transactional outbox](docs/01-outbox-pattern.md) | Atomic business write + webhook event |
+| [02 — Circuit breaker](docs/02-circuit-breaker.md) | Per-endpoint failure protection |
+| [03 — Admin API](docs/03-admin-api.md) | Stats, DLQ, bulk retry via HTTP |
+| [04 — Receiving webhooks](docs/04-receiving-webhooks.md) | axum + actix-web integrations |
+| [05 — Event filtering](docs/05-event-filtering.md) | Per-endpoint event subscriptions |
+| [06 — DLQ and monitoring](docs/06-dlq-and-monitoring.md) | Dead letter queue, cleanup, delivery log |
+| [07 — Graceful shutdown](docs/07-graceful-shutdown.md) | Kubernetes-safe worker lifecycle |
+
+---
+
 ## Running the tests
 
 ```bash
 docker compose up -d
-DATABASE_URL=postgres://webhooksmith:webhooksmith@localhost:5432/webhooksmith cargo test
+DATABASE_URL=postgres://webhooksmith:webhooksmith@localhost:5432/webhooksmith cargo test --features sqlite
 ```
 
-203 tests covering unit, integration (real Postgres + real HTTP + in-memory SQLite), edge cases, adversarial, stress, bombardment, and event filter routing.
+276 tests covering unit, integration (real Postgres + real HTTP + in-memory SQLite), true end-to-end (real actix-web receiver over TCP), circuit breaker, admin API, adversarial, stress, bombardment, and event filter routing.
 
 ---
 

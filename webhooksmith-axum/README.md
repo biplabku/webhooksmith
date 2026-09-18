@@ -110,6 +110,32 @@ new consumers receive both. The extractor accepts either.
 
 ---
 
+## Admin HTTP router
+
+`webhooksmith-axum` also ships an admin panel for operational visibility.
+Mount it anywhere — no authentication built in, add your own middleware:
+
+```rust
+use std::sync::Arc;
+use axum::Router;
+use webhooksmith::WebhookEngine;
+use webhooksmith_axum::admin;
+
+let app = Router::new()
+    .nest("/admin", admin(Arc::clone(&engine)));
+```
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/stats` | Queue counts (pending, failed, dead, delivered) |
+| `GET` | `/admin/endpoints` | All endpoints + circuit breaker state |
+| `GET` | `/admin/dlq/:id` | Dead events for one endpoint (paginated) |
+| `POST` | `/admin/dlq/:id/retry-all` | Re-queue dead events + reset circuit breaker |
+
+Returns 404 for unknown endpoint IDs. All responses are JSON.
+
+---
+
 ## Verifying without axum
 
 If you're not using axum, verify signatures directly:

@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "webhooksmith",
-    "webhooksmith-cli", "webhooksmith-axum",
+    "webhooksmith-cli", "webhooksmith-axum", "webhooksmith-actix",
 ]
 resolver = "2"
 

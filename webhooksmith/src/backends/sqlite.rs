@@ -29,6 +29,16 @@ fn now_str() -> String {
     Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 
+fn truncate_utf8_sqlite(s: String, max_bytes: usize) -> String {
+    if s.len() <= max_bytes { return s; }
+    let boundary = s.char_indices()
+        .map(|(i, c)| i + c.len_utf8())
+        .take_while(|&end| end <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    s[..boundary].to_owned()
+}
+
 fn uuid_str() -> String {
     Uuid::new_v4().to_string()
 }
@@ -77,6 +87,11 @@ fn row_to_endpoint(row: &sqlx::sqlite::SqliteRow) -> Endpoint {
         max_attempts: row.get("max_attempts"),
         initial_delay_ms: row.get("initial_delay_ms"),
         event_filter,
+        consecutive_failures: row.try_get::<i32, _>("consecutive_failures").unwrap_or(0),
+        circuit_open_until: row.try_get::<Option<String>, _>("circuit_open_until")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
         created_at: row.get::<String, _>("created_at")
             .parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
         updated_at: row.get::<String, _>("updated_at")
@@ -285,6 +300,39 @@ pub async fn enqueue(
     get_event_required(pool, &id).await
 }
 
+/// True transactional outbox for SQLite: inserts the event using the
+/// transaction's connection. The event only exists if the transaction commits.
+pub async fn enqueue_in_sqlite_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    endpoint_id: Uuid,
+    event_type: &str,
+    payload: serde_json::Value,
+) -> Result<WebhookEvent> {
+    let id = uuid_str();
+    let now = now_str();
+    let endpoint_id_str = endpoint_id.to_string();
+    let payload_str = serde_json::to_string(&payload)
+        .map_err(|e| HooksmithError::Config(format!("payload serialization: {e}")))?;
+
+    sqlx::query(
+        "INSERT INTO webhook_events
+         (id, endpoint_id, event_type, payload, scheduled_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&id).bind(&endpoint_id_str).bind(event_type)
+    .bind(&payload_str).bind(&now).bind(&now)
+    .execute(&mut **tx)   // ← uses the transaction's connection, not the pool
+    .await?;
+
+    // Read back within the same transaction (sees uncommitted data)
+    let row = sqlx::query("SELECT * FROM webhook_events WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+    Ok(row_to_event(&row))
+}
+
 pub async fn enqueue_idempotent(
     pool: &SqlitePool,
     endpoint_id: Uuid,
@@ -379,10 +427,12 @@ pub async fn claim_due_events(pool: &SqlitePool, limit: i64) -> Result<Vec<Webho
          WHERE we.status IN ('pending', 'failed')
            AND we.scheduled_at <= ?
            AND ep.enabled = 1
+           AND (ep.circuit_open_until IS NULL OR ep.circuit_open_until <= ?)
          ORDER BY we.scheduled_at
          LIMIT ?"
     )
     .bind(&now)
+    .bind(&now) // circuit_open_until check
     .bind(limit)
     .fetch_all(pool)
     .await?;
@@ -422,13 +472,16 @@ pub async fn claim_due_events(pool: &SqlitePool, limit: i64) -> Result<Vec<Webho
 }
 
 pub async fn recover_stuck_deliveries(pool: &SqlitePool, stuck_after_secs: i64) -> Result<u64> {
+    // Compute cutoff in Rust to use consistent ISO 8601 format with 'T' separator.
+    let cutoff = chrono::Utc::now() - chrono::Duration::seconds(stuck_after_secs);
+    let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
     let rows = sqlx::query(
         "UPDATE webhook_events
          SET status = 'pending', delivering_since = NULL
          WHERE status = 'delivering'
-           AND delivering_since < datetime('now', ? || ' seconds')"
+           AND delivering_since < ?"
     )
-    .bind(format!("-{stuck_after_secs}"))
+    .bind(&cutoff_str)
     .execute(pool)
     .await?
     .rows_affected();
@@ -445,9 +498,9 @@ pub async fn record_success(
     let event_id_str = event_id.to_string();
     let attempt_id = uuid_str();
     let now = now_str();
-    let body = response_body.map(|b| {
-        if b.len() > MAX_RESPONSE_BODY_BYTES { b[..MAX_RESPONSE_BODY_BYTES].to_owned() } else { b }
-    });
+    let body = response_body.map(|b| truncate_utf8_sqlite(b, MAX_RESPONSE_BODY_BYTES));
+
+    let mut tx = pool.begin().await?;
 
     sqlx::query(
         "INSERT INTO webhook_delivery_attempts
@@ -456,24 +509,40 @@ pub async fn record_success(
     )
     .bind(&attempt_id).bind(&event_id_str).bind(&now)
     .bind(response_status).bind(body).bind(duration_ms)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
+    // Get endpoint_id so we can reset its circuit breaker.
+    let endpoint_id: Option<String> = sqlx::query_scalar(
         "UPDATE webhook_events
          SET status = 'delivered', attempts = attempts + 1, delivering_since = NULL
-         WHERE id = ? AND status = 'delivering'"
+         WHERE id = ? AND status = 'delivering'
+         RETURNING endpoint_id"
     )
     .bind(&event_id_str)
-    .execute(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
+    // Reset circuit breaker — success clears consecutive failures.
+    if let Some(ep_id) = endpoint_id {
+        sqlx::query(
+            "UPDATE webhook_endpoints
+             SET consecutive_failures = 0, circuit_open_until = NULL
+             WHERE id = ?"
+        )
+        .bind(&ep_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 
 pub async fn record_failure(
     pool: &SqlitePool,
     event_id: Uuid,
+    endpoint_id: Uuid,
     endpoint_max_attempts: i32,
     endpoint_initial_delay_ms: i32,
     error: String,
@@ -481,8 +550,11 @@ pub async fn record_failure(
     duration_ms: Option<i32>,
 ) -> Result<()> {
     let event_id_str = event_id.to_string();
+    let endpoint_id_str = endpoint_id.to_string();
     let attempt_id = uuid_str();
     let now = now_str();
+
+    let mut tx = pool.begin().await?;
 
     sqlx::query(
         "INSERT INTO webhook_delivery_attempts
@@ -491,14 +563,14 @@ pub async fn record_failure(
     )
     .bind(&attempt_id).bind(&event_id_str).bind(&now)
     .bind(response_status).bind(duration_ms).bind(&error)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     let current: i32 = sqlx::query_scalar(
         "SELECT attempts FROM webhook_events WHERE id = ?"
     )
     .bind(&event_id_str)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
     let next = current + 1;
@@ -507,19 +579,52 @@ pub async fn record_failure(
         sqlx::query(
             "UPDATE webhook_events SET status = 'dead', attempts = attempts + 1, delivering_since = NULL WHERE id = ? AND status = 'delivering'"
         )
-        .bind(&event_id_str).execute(pool).await?;
+        .bind(&event_id_str).execute(&mut *tx).await?;
     } else {
         let delay = retry::next_delay(next as u32, endpoint_initial_delay_ms as u32, 3_600_000);
-        let secs = delay.as_secs() as i64;
+        let retry_at = chrono::Utc::now() + chrono::Duration::from_std(delay)
+            .unwrap_or_else(|_| chrono::Duration::seconds(60));
+        let retry_at_str = retry_at.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
         sqlx::query(
             "UPDATE webhook_events SET status = 'failed', attempts = attempts + 1,
-             scheduled_at = datetime('now', ? || ' seconds'), delivering_since = NULL
+             scheduled_at = ?, delivering_since = NULL
              WHERE id = ? AND status = 'delivering'"
         )
-        .bind(format!("+{secs}")).bind(&event_id_str)
-        .execute(pool).await?;
+        .bind(&retry_at_str).bind(&event_id_str)
+        .execute(&mut *tx).await?;
     }
 
+    // Fetch current consecutive_failures; propagate DB error rather than swallowing it.
+    let current_cf: i32 = sqlx::query_scalar(
+        "SELECT consecutive_failures FROM webhook_endpoints WHERE id = ?"
+    )
+    .bind(&endpoint_id_str)
+    .fetch_optional(&mut *tx)
+    .await?
+    .unwrap_or(0); // 0 only if endpoint was deleted concurrently — UPDATE below is a no-op
+
+    let new_cf = current_cf + 1;
+    let open_until_str: Option<String> = if new_cf >= 5 {
+        let exponent = (new_cf - 5) as u32;
+        let minutes = (5u64 * 2u64.pow(exponent)).min(320);
+        let open_until = chrono::Utc::now() + chrono::Duration::minutes(minutes as i64);
+        Some(open_until.to_rfc3339())
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "UPDATE webhook_endpoints
+         SET consecutive_failures = ?, circuit_open_until = ?
+         WHERE id = ?"
+    )
+    .bind(new_cf)
+    .bind(&open_until_str)
+    .bind(&endpoint_id_str)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -588,22 +693,52 @@ pub async fn retry_dead_event(pool: &SqlitePool, event_id: Uuid) -> Result<()> {
         Some(_)     => return Err(HooksmithError::InvalidState(event_id)),
     }
 
-    sqlx::query(
-        "UPDATE webhook_events SET status = 'pending', attempts = 0, scheduled_at = datetime('now'), delivering_since = NULL WHERE id = ?"
+    // Also reset the circuit breaker — operator explicitly requesting retry.
+    let endpoint_id_str: Option<String> = sqlx::query_scalar(
+        "SELECT endpoint_id FROM webhook_events WHERE id = ?"
     )
-    .bind(&id_str).execute(pool).await?;
+    .bind(&id_str)
+    .fetch_optional(pool)
+    .await?;
+
+    let now = now_str();
+    sqlx::query(
+        "UPDATE webhook_events SET status = 'pending', attempts = 0, scheduled_at = ?, delivering_since = NULL WHERE id = ?"
+    )
+    .bind(&now).bind(&id_str).execute(pool).await?;
+
+    if let Some(ep_id) = endpoint_id_str {
+        sqlx::query(
+            "UPDATE webhook_endpoints SET consecutive_failures = 0, circuit_open_until = NULL WHERE id = ?"
+        )
+        .bind(&ep_id)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(())
 }
 
 pub async fn retry_all_dead(pool: &SqlitePool, endpoint_id: Uuid) -> Result<u64> {
+    let endpoint_id_str = endpoint_id.to_string();
+    let now = now_str();
     let rows = sqlx::query(
-        "UPDATE webhook_events SET status = 'pending', attempts = 0, scheduled_at = datetime('now'), delivering_since = NULL WHERE endpoint_id = ? AND status = 'dead'"
+        "UPDATE webhook_events SET status = 'pending', attempts = 0, scheduled_at = ?, delivering_since = NULL WHERE endpoint_id = ? AND status = 'dead'"
     )
-    .bind(endpoint_id.to_string())
+    .bind(&now)
+    .bind(&endpoint_id_str)
     .execute(pool)
     .await?
     .rows_affected();
+
+    // Reset circuit breaker on manual DLQ retry.
+    sqlx::query(
+        "UPDATE webhook_endpoints SET consecutive_failures = 0, circuit_open_until = NULL WHERE id = ?"
+    )
+    .bind(&endpoint_id_str)
+    .execute(pool)
+    .await?;
+
     Ok(rows)
 }
 
@@ -648,27 +783,33 @@ pub async fn queue_stats(pool: &SqlitePool) -> Result<QueueStats> {
 }
 
 pub async fn cleanup_delivered(pool: &SqlitePool, older_than_secs: i64) -> Result<u64> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(older_than_secs))
+        .format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
     let rows = sqlx::query(
-        "DELETE FROM webhook_events WHERE status = 'delivered' AND created_at < datetime('now', ? || ' seconds')"
+        "DELETE FROM webhook_events WHERE status = 'delivered' AND created_at < ?"
     )
-    .bind(format!("-{older_than_secs}"))
+    .bind(&cutoff)
     .execute(pool).await?.rows_affected();
     Ok(rows)
 }
 
 pub async fn cleanup_dead(pool: &SqlitePool, older_than_secs: i64) -> Result<u64> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(older_than_secs))
+        .format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
     let rows = sqlx::query(
-        "DELETE FROM webhook_events WHERE status = 'dead' AND created_at < datetime('now', ? || ' seconds')"
+        "DELETE FROM webhook_events WHERE status = 'dead' AND created_at < ?"
     )
-    .bind(format!("-{older_than_secs}"))
+    .bind(&cutoff)
     .execute(pool).await?.rows_affected();
     Ok(rows)
 }
 
 pub async fn reset_to_pending(pool: &SqlitePool, event_id: Uuid) -> Result<()> {
+    let now = now_str();
     sqlx::query(
-        "UPDATE webhook_events SET status = 'pending', delivering_since = NULL, scheduled_at = datetime('now') WHERE id = ? AND status = 'delivering'"
+        "UPDATE webhook_events SET status = 'pending', delivering_since = NULL, scheduled_at = ? WHERE id = ? AND status = 'delivering'"
     )
+    .bind(&now)
     .bind(event_id.to_string())
     .execute(pool).await?;
     Ok(())

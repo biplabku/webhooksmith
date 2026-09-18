@@ -372,6 +372,7 @@ pub async fn claim_due_events(pool: &PgPool, limit: i64) -> Result<Vec<WebhookEv
             WHERE we.status IN ('pending', 'failed')
               AND we.scheduled_at <= NOW()
               AND ep.enabled = true
+              AND (ep.circuit_open_until IS NULL OR ep.circuit_open_until <= NOW())
             ORDER BY we.scheduled_at
             LIMIT $1
             FOR UPDATE OF we SKIP LOCKED
@@ -444,16 +445,31 @@ pub async fn record_success(
     // Guard: only update if still in 'delivering' state.
     // If the reaper already reset this event (worker was too slow), this is a no-op.
     // The delivery attempt record above is still written as evidence.
-    sqlx::query!(
+    let updated = sqlx::query!(
         r#"
         UPDATE webhook_events
         SET status = 'delivered', attempts = attempts + 1, delivering_since = NULL
         WHERE id = $1 AND status = 'delivering'
+        RETURNING endpoint_id
         "#,
         event_id,
     )
-    .execute(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
+
+    // Reset circuit breaker on the endpoint — success clears consecutive failures.
+    if let Some(row) = updated {
+        sqlx::query!(
+            r#"
+            UPDATE webhook_endpoints
+            SET consecutive_failures = 0, circuit_open_until = NULL
+            WHERE id = $1
+            "#,
+            row.endpoint_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
     Ok(())
@@ -530,6 +546,24 @@ pub async fn record_failure(
         .await?;
     }
 
+    // Increment consecutive_failures on the endpoint and open circuit if threshold exceeded.
+    // Threshold: 5 consecutive failures → open for 5 minutes, doubling each time after.
+    sqlx::query!(
+        r#"
+        UPDATE webhook_endpoints
+        SET consecutive_failures = consecutive_failures + 1,
+            circuit_open_until = CASE
+                WHEN consecutive_failures + 1 >= 5
+                THEN NOW() + (LEAST(POWER(2, consecutive_failures + 1 - 5), 64) * INTERVAL '5 minutes')
+                ELSE NULL
+            END
+        WHERE id = $1
+        "#,
+        event.endpoint_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
     Ok(())
 }
@@ -582,7 +616,17 @@ pub async fn retry_dead_event(pool: &PgPool, event_id: Uuid) -> Result<()> {
         Some(_) => return Err(HooksmithError::InvalidState(event_id)),
     }
 
-    sqlx::query!(
+    // Get endpoint_id so we can reset its circuit breaker.
+    let endpoint_id = sqlx::query_scalar!(
+        "SELECT endpoint_id FROM webhook_events WHERE id = $1",
+        event_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let mut tx = pool.begin().await?;
+
+    let rows = sqlx::query!(
         r#"
         UPDATE webhook_events
         SET status = 'pending', attempts = 0, scheduled_at = NOW(), delivering_since = NULL
@@ -590,9 +634,29 @@ pub async fn retry_dead_event(pool: &PgPool, event_id: Uuid) -> Result<()> {
         "#,
         event_id,
     )
-    .execute(pool)
-    .await?;
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
 
+    // Only reset circuit breaker if the event was actually re-queued.
+    // Under concurrent retry calls, the second caller's UPDATE is a no-op
+    // and must NOT unconditionally reset the circuit state.
+    if rows > 0 {
+        if let Some(ep_id) = endpoint_id {
+            sqlx::query!(
+                r#"
+                UPDATE webhook_endpoints
+                SET consecutive_failures = 0, circuit_open_until = NULL
+                WHERE id = $1
+                "#,
+                ep_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
     Ok(())
 }
 
@@ -829,6 +893,8 @@ pub(crate) async fn dead_events_paged(
 
 /// Requeues every dead event for an endpoint. Returns the number of events requeued.
 pub(crate) async fn retry_all_dead(pool: &PgPool, endpoint_id: Uuid) -> Result<u64> {
+    let mut tx = pool.begin().await?;
+
     let rows = sqlx::query!(
         r#"
         UPDATE webhook_events
@@ -837,9 +903,23 @@ pub(crate) async fn retry_all_dead(pool: &PgPool, endpoint_id: Uuid) -> Result<u
         "#,
         endpoint_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
+
+    // Reset circuit breaker — manual DLQ retry is an operator override.
+    sqlx::query!(
+        r#"
+        UPDATE webhook_endpoints
+        SET consecutive_failures = 0, circuit_open_until = NULL
+        WHERE id = $1
+        "#,
+        endpoint_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(rows)
 }
 
@@ -884,10 +964,13 @@ fn truncate_utf8(s: String, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s;
     }
+    // Find the largest UTF-8 boundary that fits within max_bytes.
+    // `char_indices` yields (byte_start, char). We want the byte position
+    // AFTER the last char that fits entirely within max_bytes.
     let boundary = s
         .char_indices()
-        .map(|(i, _)| i)
-        .take_while(|&i| i < max_bytes)
+        .map(|(i, c)| i + c.len_utf8()) // byte position AFTER each char
+        .take_while(|&end| end <= max_bytes)
         .last()
         .unwrap_or(0);
     s[..boundary].to_owned()

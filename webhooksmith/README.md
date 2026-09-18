@@ -29,9 +29,9 @@ engine.migrate().await?;
 // All the same methods: send, broadcast, retry_dead, queue_stats, etc.
 ```
 
-> **SQLite limitation:** `send_in_tx()` does not provide true transactional outbox semantics.
-> The event is enqueued immediately regardless of whether your surrounding transaction commits or rolls back.
-> For guaranteed atomicity between your business data and webhook events, use the Postgres backend.
+> **SQLite transactional outbox:** `SqliteEngine::send_in_tx()` provides true atomicity.
+> The event is written on the transaction's connection — rollback removes it, commit persists it.
+> Both backends support the full transactional outbox pattern.
 
 ---
 
@@ -278,8 +278,11 @@ Endpoint {
     enabled: true,
     max_attempts: 10,
     initial_delay_ms: 1000,
+    event_filter: Some(["order.*"]),    // None = receive all
+    consecutive_failures: 0,            // circuit breaker counter
+    circuit_open_until: None,           // Some(DateTime) when circuit is open
     created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",  // updated automatically by DB trigger
+    updated_at: "2026-01-01T00:00:00Z",
 }
 ```
 
@@ -308,6 +311,20 @@ let log: Vec<DeliveryAttempt> = engine.delivery_log(event.id).await?;
 
 // Get one event by ID
 let ev: Option<WebhookEvent> = engine.event(event_id).await?;
+```
+
+---
+
+## Circuit breaker
+
+After 5 consecutive delivery failures the endpoint's circuit opens. The worker skips it
+until the open window expires (5 min → 10 min → 20 min … capped at 320 min, doubling each time).
+A single successful delivery resets the counter. Manual DLQ retry (`retry_all_dead`) also resets it.
+
+```rust
+let ep = engine.endpoint(ep_id).await?.unwrap();
+println!("failures: {}", ep.consecutive_failures);
+println!("open until: {:?}", ep.circuit_open_until); // None = closed
 ```
 
 ---
@@ -381,7 +398,7 @@ x-hooksmith-event-type: order.created
 **Signature format** (Svix-compatible):
 The HMAC-SHA256 is computed over `{timestamp}.{body}` using your signing secret.
 
-**Verifying on the receiving side** with `webhooksmith-axum`:
+**Verifying on the receiving side** with `webhooksmith-axum` (axum) or `webhooksmith-actix` (actix-web):
 ```rust
 use axum::{Router, routing::post, http::StatusCode};
 use webhooksmith_axum::{WebhookSecretLayer, VerifiedWebhook};

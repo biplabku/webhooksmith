@@ -40,6 +40,8 @@ futures = "0.3"
 tracing-subscriber = { workspace = true }
 axum = { workspace = true }
 webhooksmith-axum = { path = "../webhooksmith-axum" }
+actix-web = "4"
+webhooksmith-actix = { path = "../webhooksmith-actix" }
 
 [[example]]
 name = "demo"

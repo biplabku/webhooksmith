@@ -24,6 +24,11 @@ pub struct Endpoint {
     /// - `"order.*"` — any event starting with `"order."`
     /// - `"*"` — matches all events
     pub event_filter: Option<Vec<String>>,
+    /// How many consecutive delivery failures this endpoint has seen since the last success.
+    /// Resets to 0 on any successful delivery.
+    pub consecutive_failures: i32,
+    /// If set, the circuit is open and this endpoint will be skipped until this time.
+    pub circuit_open_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

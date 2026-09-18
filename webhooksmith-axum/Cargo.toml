@@ -19,7 +19,12 @@ http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 axum = { workspace = true }
+tower = { version = "0.4", features = ["util"] }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
