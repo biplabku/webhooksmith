@@ -151,6 +151,21 @@ engine.clear_event_filter(ep_id).await?;  // back to receiving all
 
 ---
 
+## Key properties
+
+| Property | Detail |
+|---|---|
+| **Transactional outbox** | Business data and webhook event written atomically — no phantom events, no silent drops (Postgres) |
+| **Idempotency keys** | `send_idempotent("order.created", payload, endpoint_id, "order-1001")` — safe to retry, never duplicates |
+| **Event type filtering** | Endpoints subscribe to `"order.*"` or `"payment.captured"` — `broadcast()` routes automatically |
+| **Graceful shutdown** | `run_graceful(ctrl_c_signal)` — current batch drains before exit (Kubernetes-safe) |
+| **SSRF protection** | Private IPs, loopback, link-local blocked at registration AND at delivery (DNS rebinding protection) |
+| **HMAC-SHA256 signing** | Constant-time verification, replay protection, Svix-compatible format |
+| **Dead letter queue** | Events that exhaust retries are inspectable and requeueable, not silently dropped |
+| **Multi-backend** | Postgres (full transactional outbox) or SQLite (no Postgres required) |
+
+---
+
 ## Receiving webhooks
 
 Add `webhooksmith-axum` to verify incoming signatures in an axum handler:
