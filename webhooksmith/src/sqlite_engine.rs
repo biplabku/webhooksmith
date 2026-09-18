@@ -58,13 +58,24 @@ impl SqliteEngine {
     }
 
     /// Run pending migrations. Safe to call on every startup.
-    /// Idempotent — uses IF NOT EXISTS so re-running is safe.
+    /// Idempotent — uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS.
     pub async fn migrate(&self) -> Result<()> {
-        let sql = include_str!("../migrations-sqlite/0001_initial.sql");
-        sqlx::raw_sql(sql)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| crate::error::HooksmithError::Database(e.into()))?;
+        // Run all migration files in order
+        let migrations = [
+            include_str!("../migrations-sqlite/0001_initial.sql"),
+            include_str!("../migrations-sqlite/0002_event_filter.sql"),
+        ];
+        for sql in &migrations {
+            // SQLite doesn't support "ADD COLUMN IF NOT EXISTS" directly, so we
+            // handle the "duplicate column" error gracefully.
+            if let Err(e) = sqlx::raw_sql(sql).execute(&self.pool).await {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column") {
+                    return Err(crate::error::HooksmithError::Database(e.into()));
+                }
+                // duplicate column = migration already applied, skip
+            }
+        }
         Ok(())
     }
 
@@ -76,6 +87,7 @@ impl SqliteEngine {
             description: None,
             max_attempts: None,
             initial_delay_ms: None,
+            event_filter: None,
         };
         if !self.allow_insecure_urls {
             config.validate()?;
@@ -110,6 +122,29 @@ impl SqliteEngine {
 
     pub async fn disable_endpoint(&self, id: Uuid) -> Result<Endpoint> {
         db::update_endpoint_field(&self.pool, id, None, None, false, None, Some(false), None, None).await
+    }
+
+    /// Set the event type filter — only matching events from broadcast() are delivered.
+    pub async fn set_event_filter(&self, id: Uuid, patterns: Vec<String>) -> Result<Endpoint> {
+        // Store as JSON in SQLite
+        let filter_json = serde_json::to_string(&patterns).ok();
+        sqlx::query("UPDATE webhook_endpoints SET event_filter = ? WHERE id = ?")
+            .bind(filter_json)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        db::get_endpoint_by_id(&self.pool, id).await?
+            .ok_or(crate::error::HooksmithError::EndpointNotFound(id))
+    }
+
+    /// Remove the event type filter — endpoint receives all events from broadcast() again.
+    pub async fn clear_event_filter(&self, id: Uuid) -> Result<Endpoint> {
+        sqlx::query("UPDATE webhook_endpoints SET event_filter = NULL WHERE id = ?")
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        db::get_endpoint_by_id(&self.pool, id).await?
+            .ok_or(crate::error::HooksmithError::EndpointNotFound(id))
     }
 
     pub async fn endpoint(&self, id: Uuid) -> Result<Option<Endpoint>> {

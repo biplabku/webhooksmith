@@ -62,6 +62,12 @@ fn status_str(s: &EventStatus) -> &'static str {
 fn row_to_endpoint(row: &sqlx::sqlite::SqliteRow) -> Endpoint {
     use sqlx::Row;
     let enabled_int: i64 = row.get("enabled");
+    // event_filter stored as JSON array string in SQLite, or NULL
+    let event_filter: Option<Vec<String>> = row
+        .try_get::<Option<String>, _>("event_filter")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
     Endpoint {
         id: row.get::<String, _>("id").parse().unwrap_or_default(),
         url: row.get("url"),
@@ -70,6 +76,7 @@ fn row_to_endpoint(row: &sqlx::sqlite::SqliteRow) -> Endpoint {
         enabled: int_to_bool(enabled_int),
         max_attempts: row.get("max_attempts"),
         initial_delay_ms: row.get("initial_delay_ms"),
+        event_filter,
         created_at: row.get::<String, _>("created_at")
             .parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now()),
         updated_at: row.get::<String, _>("updated_at")
@@ -121,10 +128,13 @@ fn row_to_attempt(row: &sqlx::sqlite::SqliteRow) -> DeliveryAttempt {
 pub async fn create_endpoint(pool: &SqlitePool, new: NewEndpoint) -> Result<Endpoint> {
     let id = uuid_str();
     let now = now_str();
+    // Serialize event_filter as JSON array for SQLite TEXT storage
+    let filter_json = new.event_filter.as_ref()
+        .map(|f| serde_json::to_string(f).unwrap_or_default());
     sqlx::query(
         "INSERT INTO webhook_endpoints
-         (id, url, signing_secret, description, enabled, max_attempts, initial_delay_ms, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)"
+         (id, url, signing_secret, description, enabled, max_attempts, initial_delay_ms, event_filter, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)"
     )
     .bind(&id)
     .bind(&new.url)
@@ -132,6 +142,7 @@ pub async fn create_endpoint(pool: &SqlitePool, new: NewEndpoint) -> Result<Endp
     .bind(&new.description)
     .bind(new.max_attempts.unwrap_or(10))
     .bind(new.initial_delay_ms.unwrap_or(1000))
+    .bind(&filter_json)
     .bind(&now)
     .bind(&now)
     .execute(pool)
@@ -328,9 +339,10 @@ pub async fn broadcast(
     event_type: &str,
     payload: serde_json::Value,
 ) -> Result<Vec<WebhookEvent>> {
+    use crate::model::event_matches_filter;
     let endpoints = list_endpoints(pool).await?;
     let mut events = Vec::new();
-    for ep in endpoints.iter().filter(|e| e.enabled) {
+    for ep in endpoints.iter().filter(|e| e.enabled && event_matches_filter(event_type, &e.event_filter)) {
         let ev = enqueue(pool, ep.id, event_type, payload.clone()).await?;
         events.push(ev);
     }
@@ -343,9 +355,10 @@ pub async fn broadcast_idempotent(
     payload: serde_json::Value,
     idempotency_key: &str,
 ) -> Result<Vec<WebhookEvent>> {
+    use crate::model::event_matches_filter;
     let endpoints = list_endpoints(pool).await?;
     let mut events = Vec::new();
-    for ep in endpoints.iter().filter(|e| e.enabled) {
+    for ep in endpoints.iter().filter(|e| e.enabled && event_matches_filter(event_type, &e.event_filter)) {
         let ev = enqueue_idempotent(pool, ep.id, event_type, payload.clone(), idempotency_key).await?;
         events.push(ev);
     }
