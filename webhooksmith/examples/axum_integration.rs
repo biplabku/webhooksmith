@@ -10,7 +10,7 @@
 //!   docker compose up -d
 //!   cargo run --example axum_integration -p webhooksmith
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use axum::{
     extract::State,
     routing::{get, post},
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(state);
 
     // 4. Shutdown signal — Ctrl-C or SIGTERM
-    let shutdown = async {
+    let _shutdown = async {
         tokio::signal::ctrl_c().await.ok();
         println!("Shutting down...");
     };

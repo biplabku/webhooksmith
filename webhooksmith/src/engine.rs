@@ -154,7 +154,7 @@ impl WebhookEngineBuilder {
     }
 }
 
-fn event_status_to_str(status: &EventStatus) -> &'static str {
+pub fn event_status_to_str(status: &EventStatus) -> &'static str {
     match status {
         EventStatus::Pending => "pending",
         EventStatus::Delivering => "delivering",

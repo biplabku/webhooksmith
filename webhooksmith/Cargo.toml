@@ -1,7 +1,7 @@
 [package]
 name = "webhooksmith"
-description = "Webhook delivery for Rust backed by Postgres. Atomic outbox pattern, HMAC-SHA256 signing, automatic retry with exponential backoff, dead letter queue. No external services."
-keywords = ["webhook", "outbox", "delivery", "postgres", "async"]
+description = "Webhook delivery for Rust — atomic outbox pattern, HMAC-SHA256 signing, retry with backoff, dead letter queue. Supports Postgres and SQLite."
+keywords = ["webhook", "outbox", "delivery", "postgres", "sqlite"]
 categories = ["web-programming", "asynchronous", "database"]
 readme = "README.md"
 version.workspace = true
@@ -9,6 +9,11 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[features]
+default = ["postgres"]
+postgres = []
+sqlite = []
 
 [dependencies]
 tokio = { workspace = true }

@@ -594,6 +594,12 @@ pub(crate) async fn record_endpoint_deleted(pool: &PgPool, event_id: Uuid) {
 
 const MAX_EVENT_TYPE_BYTES: usize = 256;
 
+/// Public wrapper so the SQLite engine can reuse the same validation.
+#[cfg(feature = "sqlite")]
+pub fn validate_enqueue_public(event_type: &str, payload: &serde_json::Value) -> Result<()> {
+    validate_enqueue(event_type, payload)
+}
+
 fn validate_enqueue(event_type: &str, payload: &serde_json::Value) -> Result<()> {
     if event_type.trim().is_empty() {
         return Err(HooksmithError::Config("event_type must not be empty".into()));
