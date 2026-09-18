@@ -4,7 +4,7 @@
 [![docs.rs](https://docs.rs/webhooksmith/badge.svg)](https://docs.rs/webhooksmith)
 [![MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 
-Webhook delivery for Rust backed by Postgres. Atomic outbox writes, HMAC-SHA256 signing,
+Webhook delivery for Rust backed by Postgres or SQLite. Atomic outbox writes, HMAC-SHA256 signing,
 automatic retry with exponential backoff, and dead letter queue. No external services.
 
 ---

@@ -1,6 +1,6 @@
 # webhooksmith
 
-Webhook delivery for Rust backed by Postgres. Atomic outbox writes, HMAC-SHA256 signing,
+Webhook delivery for Rust backed by Postgres or SQLite. Atomic outbox writes, HMAC-SHA256 signing,
 automatic retry with exponential backoff, and dead letter queue. No external services.
 
 ```toml
