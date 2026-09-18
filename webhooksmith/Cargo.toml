@@ -47,3 +47,15 @@ path = "examples/basic.rs"
 [[example]]
 name = "outbox"
 path = "examples/outbox.rs"
+
+[[example]]
+name = "axum_integration"
+path = "examples/axum_integration.rs"
+
+[[example]]
+name = "monitoring"
+path = "examples/monitoring.rs"
+
+[[example]]
+name = "multi_tenant"
+path = "examples/multi_tenant.rs"

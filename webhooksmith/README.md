@@ -442,13 +442,28 @@ The `webhook_events` table has a partial index on `(status, scheduled_at)` for e
 
 ---
 
-## Running the demo
+## How-to examples
 
 ```bash
-docker compose up -d
-cargo run --example demo -p webhooksmith   # full end-to-end with axum receiver
-cargo run --example basic -p webhooksmith  # minimal setup
-cargo run --example outbox -p webhooksmith # transactional outbox patterns
+docker compose up -d   # start Postgres
+
+# Minimal setup — connect, register, send, deliver
+cargo run --example basic -p webhooksmith
+
+# Transactional outbox — atomic writes, rollback safety
+cargo run --example outbox -p webhooksmith
+
+# Full axum integration — engine in State, graceful shutdown
+cargo run --example axum_integration -p webhooksmith
+
+# Multi-tenant — per-customer endpoints, broadcast, idempotent sends
+cargo run --example multi_tenant -p webhooksmith
+
+# Monitoring — queue stats, DLQ alerts, retry failed events, cleanup
+cargo run --example monitoring -p webhooksmith
+
+# Full end-to-end demo with real axum receiver
+cargo run --example demo -p webhooksmith
 ```
 
 ---
