@@ -1,7 +1,8 @@
 # webhooksmith
 
-Webhook delivery for Rust backed by Postgres or SQLite. Atomic outbox writes, HMAC-SHA256 signing,
-automatic retry with exponential backoff, and dead letter queue. No external services.
+Webhook delivery for Rust backed by Postgres or SQLite. HMAC-SHA256 signing,
+automatic retry with exponential backoff, dead letter queue, and event type filtering.
+Postgres: full transactional outbox (atomic writes). SQLite: persistent delivery without Postgres.
 
 **Postgres backend (default — best for production, transactional outbox):**
 ```toml
@@ -27,6 +28,10 @@ let engine = SqliteEngine::new("sqlite:webhooks.db").await?;
 engine.migrate().await?;
 // All the same methods: send, broadcast, retry_dead, queue_stats, etc.
 ```
+
+> **SQLite limitation:** `send_in_tx()` does not provide true transactional outbox semantics.
+> The event is enqueued immediately regardless of whether your surrounding transaction commits or rolls back.
+> For guaranteed atomicity between your business data and webhook events, use the Postgres backend.
 
 ---
 

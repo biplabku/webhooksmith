@@ -4,8 +4,9 @@
 [![docs.rs](https://docs.rs/webhooksmith/badge.svg)](https://docs.rs/webhooksmith)
 [![MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 
-Webhook delivery for Rust backed by Postgres or SQLite. Atomic outbox writes, HMAC-SHA256 signing,
-automatic retry with exponential backoff, and dead letter queue. No external services.
+Webhook delivery for Rust backed by Postgres or SQLite. HMAC-SHA256 signing,
+automatic retry with exponential backoff, dead letter queue, and event type filtering.
+Postgres backend: full transactional outbox (atomic writes). SQLite backend: persistent delivery without Postgres.
 
 ---
 
