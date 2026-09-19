@@ -72,7 +72,7 @@ impl SqliteEngine {
             if let Err(e) = sqlx::raw_sql(sql).execute(&self.pool).await {
                 let msg = e.to_string();
                 if !msg.contains("duplicate column") {
-                    return Err(crate::error::HooksmithError::Database(e.into()));
+                    return Err(crate::error::HooksmithError::Database(e));
                 }
                 // duplicate column = migration already applied, skip
             }

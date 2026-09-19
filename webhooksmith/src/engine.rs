@@ -133,11 +133,9 @@ impl WebhookEngineBuilder {
     fn validate_timeouts(http_timeout: Duration, stuck_timeout: Duration) {
         assert!(
             http_timeout < stuck_timeout,
-            "http_timeout ({:?}) must be less than stuck_timeout ({:?}). \
+            "http_timeout ({http_timeout:?}) must be less than stuck_timeout ({stuck_timeout:?}). \
              If http_timeout >= stuck_timeout the reaper resets events that \
              are still waiting for an HTTP response.",
-            http_timeout,
-            stuck_timeout
         );
     }
 

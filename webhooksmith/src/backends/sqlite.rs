@@ -203,6 +203,7 @@ pub async fn list_endpoints_paged(pool: &SqlitePool, limit: i64, offset: i64) ->
     Ok(rows.iter().map(row_to_endpoint).collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_endpoint_field(
     pool: &SqlitePool,
     id: Uuid,
@@ -539,6 +540,7 @@ pub async fn record_success(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn record_failure(
     pool: &SqlitePool,
     event_id: Uuid,
