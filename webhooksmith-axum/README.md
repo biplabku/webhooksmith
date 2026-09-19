@@ -128,11 +128,12 @@ let app = Router::new()
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/admin/stats` | Queue counts (pending, failed, dead, delivered) |
-| `GET` | `/admin/endpoints` | All endpoints + circuit breaker state |
-| `GET` | `/admin/dlq/:id` | Dead events for one endpoint (paginated) |
-| `POST` | `/admin/dlq/:id/retry-all` | Re-queue dead events + reset circuit breaker |
+| `GET` | `/admin/endpoints?limit=50&offset=0` | Endpoints paginated, with circuit breaker state |
+| `GET` | `/admin/dlq/:endpoint_id?limit=50&offset=0` | Dead events for one endpoint |
+| `POST` | `/admin/dlq/:endpoint_id/retry-all` | Re-queue dead events + reset circuit breaker |
+| `GET` | `/admin/metrics` | Prometheus scrape endpoint (text/plain, version 0.0.4) |
 
-Returns 404 for unknown endpoint IDs. All responses are JSON.
+Returns 404 for unknown endpoint IDs. `/metrics` returns Prometheus text; all others return JSON.
 
 ---
 

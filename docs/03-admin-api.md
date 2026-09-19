@@ -37,9 +37,10 @@ Queue health at a glance.
 }
 ```
 
-### `GET /admin/endpoints`
+### `GET /admin/endpoints?limit=50&offset=0`
 
-All registered endpoints, including circuit breaker state.
+Paginated list of registered endpoints, including circuit breaker state.
+Query params: `limit` (1–200, default 50) and `offset` (default 0).
 
 ```json
 [
@@ -88,6 +89,27 @@ curl -X POST /admin/dlq/01234567-.../retry-all
 
 ```json
 { "retried": 42 }
+```
+
+### `GET /admin/metrics`
+
+Prometheus scrape endpoint. Returns standard text exposition format (version 0.0.4).
+Point your Prometheus scraper at it — no configuration needed.
+
+```
+# HELP webhooksmith_events Current number of webhook events by status.
+# TYPE webhooksmith_events gauge
+webhooksmith_events{status="pending"} 3
+webhooksmith_events{status="delivering"} 1
+webhooksmith_events{status="failed"} 0
+webhooksmith_events{status="dead"} 2
+webhooksmith_events{status="delivered"} 1042
+
+# HELP webhooksmith_endpoints Current number of registered endpoints by state.
+# TYPE webhooksmith_endpoints gauge
+webhooksmith_endpoints{state="enabled"} 5
+webhooksmith_endpoints{state="disabled"} 1
+webhooksmith_endpoints{state="circuit_open"} 0
 ```
 
 ## Security

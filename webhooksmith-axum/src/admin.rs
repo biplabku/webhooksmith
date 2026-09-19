@@ -20,7 +20,7 @@
 //! | Method | Path | Description |
 //! |--------|------|-------------|
 //! | `GET` | `/stats` | Queue stats (pending, delivering, failed, dead, delivered) |
-//! | `GET` | `/endpoints` | All registered endpoints |
+//! | `GET` | `/endpoints` | Registered endpoints, paginated (`?limit=50&offset=0`) |
 //! | `GET` | `/dlq/{endpoint_id}` | Dead events for an endpoint (paginated) |
 //! | `POST` | `/dlq/{endpoint_id}/retry-all` | Re-queue all dead events + reset circuit |
 //! | `GET` | `/metrics` | Prometheus text exposition (scrape endpoint) |
@@ -91,8 +91,11 @@ async fn get_stats(State(s): State<AdminState>) -> impl IntoResponse {
     }
 }
 
-async fn get_endpoints(State(s): State<AdminState>) -> impl IntoResponse {
-    match s.engine.list_endpoints().await {
+async fn get_endpoints(
+    State(s): State<AdminState>,
+    Query(page): Query<Pagination>,
+) -> impl IntoResponse {
+    match s.engine.list_endpoints_paged(page.limit.clamp(1, 200), page.offset.max(0)).await {
         Ok(eps) => Json(eps).into_response(),
         Err(e) => err_json(e.to_string()).into_response(),
     }

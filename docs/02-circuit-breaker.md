@@ -66,7 +66,7 @@ engine.retry_all_dead(endpoint_id).await?;
 Or via the admin API:
 
 ```
-POST /admin/dlq/{endpoint_id}/retry-all
+POST /admin/dlq/:endpoint_id/retry-all
 ```
 
 ## Tuning

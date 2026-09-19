@@ -236,6 +236,7 @@ let ep = engine.register_with(webhooksmith::NewEndpoint {
     description: Some("Partner A".into()),
     max_attempts: Some(10),       // retries before DLQ (default: 10, min: 1)
     initial_delay_ms: Some(1000), // first retry delay ms (default: 1000, min: 1)
+    ..Default::default()
 }).await?;
 
 // Fetch one

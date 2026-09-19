@@ -98,16 +98,35 @@ async fn stats_reflects_enqueued_events(pool: PgPool) {
 // ── GET /admin/endpoints ──────────────────────────────────────────────────────
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn endpoints_lists_all_registered_endpoints(pool: PgPool) {
+async fn endpoints_lists_registered_endpoints_paginated(pool: PgPool) {
     let e = engine(pool);
     let app = app(Arc::clone(&e));
 
     e.register("https://example.com/hook", "admin_test_secret_32chars_____").await.unwrap();
     e.register("https://example2.com/hook", "admin_test_secret_32chars_____").await.unwrap();
 
+    // Default limit=50 offset=0 — returns both
     let (status, json) = get_json(&app, "/admin/endpoints").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(json.as_array().unwrap().len() >= 2);
+    assert_eq!(json.as_array().unwrap().len(), 2);
+
+    // limit=1 returns exactly 1
+    let (status, page1) = get_json(&app, "/admin/endpoints?limit=1&offset=0").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page1.as_array().unwrap().len(), 1);
+
+    // offset=1 returns the second
+    let (_, page2) = get_json(&app, "/admin/endpoints?limit=1&offset=1").await;
+    assert_eq!(page2.as_array().unwrap().len(), 1);
+
+    // Pages must not overlap
+    let id1 = page1[0]["id"].as_str().unwrap();
+    let id2 = page2[0]["id"].as_str().unwrap();
+    assert_ne!(id1, id2, "pages must not overlap");
+
+    // offset past end returns empty
+    let (_, page3) = get_json(&app, "/admin/endpoints?limit=10&offset=100").await;
+    assert_eq!(page3.as_array().unwrap().len(), 0);
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]

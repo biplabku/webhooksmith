@@ -233,7 +233,8 @@ use webhooksmith_axum::admin;
 
 let app = Router::new()
     .nest("/admin", admin(Arc::clone(&engine)));
-// GET /admin/stats, GET /admin/endpoints, GET /admin/dlq/:id, POST /admin/dlq/:id/retry-all
+// GET /admin/stats · GET /admin/endpoints · GET /admin/dlq/:endpoint_id
+// POST /admin/dlq/:endpoint_id/retry-all · GET /admin/metrics (Prometheus)
 ```
 
 → [Admin API docs](docs/03-admin-api.md)

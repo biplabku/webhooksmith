@@ -18,7 +18,7 @@
 //! struct OrderCreated { order_id: u64 }
 //!
 //! async fn handle_raw(webhook: VerifiedWebhook) -> impl Responder {
-//!     tracing::info!(event_type = %webhook.event_type, "received");
+//!     tracing::info!(event_type = %webhook.event_type, event_id = ?webhook.event_id, "received");
 //!     HttpResponse::Ok().finish()
 //! }
 //!
@@ -89,8 +89,8 @@ impl WebhookSecret {
 pub struct WebhookPayload {
     /// Value of the `x-hooksmith-event-type` header (may be empty if absent).
     pub event_type: String,
-    /// Value of the `x-hooksmith-event-id` header (may be empty if absent).
-    pub event_id: String,
+    /// Value of the `x-hooksmith-event-id` header. `None` if the header was not sent.
+    pub event_id: Option<String>,
     /// Unix timestamp from the `x-hooksmith-timestamp` header.
     pub timestamp: i64,
     /// Raw JSON body bytes (signature already verified).
@@ -221,8 +221,7 @@ async fn extract_and_verify(
         .headers()
         .get("x-hooksmith-event-id")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
+        .map(str::to_owned);
 
     Ok(WebhookPayload { event_type, event_id, timestamp, body })
 }

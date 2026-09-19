@@ -115,6 +115,6 @@ Both integrations expose the same metadata:
 | Field | Description |
 |-------|-------------|
 | `event_type` | Value of `x-hooksmith-event-type` header |
-| `event_id` | Value of `x-hooksmith-event-id` header |
+| `event_id` | `Option<String>` — `None` if header absent (axum) / `Option<String>` (actix) |
 | `timestamp` | Unix timestamp from `x-hooksmith-timestamp` |
-| `body` | Raw JSON bytes (axum) / `Bytes` (actix) |
+| `body` | `serde_json::Value` — parsed JSON body (axum) / `Bytes` — raw bytes (actix) |

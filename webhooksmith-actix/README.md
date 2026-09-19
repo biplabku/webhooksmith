@@ -25,7 +25,7 @@ use serde::Deserialize;
 struct OrderCreated { order_id: u64 }
 
 async fn handle_raw(webhook: VerifiedWebhook) -> impl Responder {
-    println!("event: {}, id: {}", webhook.event_type, webhook.event_id);
+    println!("event: {}, id: {:?}", webhook.event_type, webhook.event_id);
     HttpResponse::Ok().finish()
 }
 
