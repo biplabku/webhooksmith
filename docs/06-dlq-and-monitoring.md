@@ -82,6 +82,35 @@ if recovered > 0 {
 }
 ```
 
+## OpenTelemetry / distributed tracing
+
+Every delivery attempt is wrapped in a `tracing` span named `webhook.deliver`.
+If your application has `tracing-opentelemetry` configured, these become OTel
+spans automatically — no additional configuration in webhooksmith required.
+
+```toml
+# Your application's Cargo.toml
+[dependencies]
+tracing-opentelemetry = "0.x"
+opentelemetry-otlp = "0.x"    # or jaeger, zipkin, etc.
+```
+
+Span attributes on each delivery:
+
+| Attribute | Value |
+|-----------|-------|
+| `webhook.event_id` | UUID of the event |
+| `webhook.event_type` | e.g. `"order.created"` |
+| `webhook.endpoint_id` | UUID of the endpoint |
+| `webhook.attempt` | attempt number (1-based) |
+| `http.status_code` | response HTTP status |
+| `webhook.success` | `true` / `false` |
+| `webhook.duration_ms` | delivery latency in ms |
+
+These attributes are compatible with OpenTelemetry semantic conventions
+for HTTP clients. In Jaeger or Honeycomb, each span appears as one HTTP
+call to the partner endpoint.
+
 ## Admin API equivalent
 
 All of the above is also available via the admin HTTP endpoints if you've mounted

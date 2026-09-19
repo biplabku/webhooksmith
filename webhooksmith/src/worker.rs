@@ -247,6 +247,34 @@ async fn read_body_limited(response: reqwest::Response, limit: usize) -> Option<
     }
 }
 
+/// Deliver a single webhook event.
+///
+/// This function is instrumented with a `tracing` span named `webhook.deliver`.
+/// Applications using `tracing-opentelemetry` will see it as an OTel span with
+/// the following attributes:
+///
+/// | Attribute | Value |
+/// |-----------|-------|
+/// | `webhook.event_id` | UUID of the event |
+/// | `webhook.event_type` | e.g. `"order.created"` |
+/// | `webhook.endpoint_id` | UUID of the endpoint |
+/// | `webhook.attempt` | current attempt number |
+/// | `http.status_code` | response status (set after delivery) |
+/// | `webhook.success` | `true` or `false` |
+/// | `webhook.duration_ms` | delivery latency in milliseconds |
+#[tracing::instrument(
+    name = "webhook.deliver",
+    skip(pool, client),
+    fields(
+        webhook.event_id    = %event.id,
+        webhook.event_type  = %event.event_type,
+        webhook.endpoint_id = %event.endpoint_id,
+        webhook.attempt     = event.attempts + 1,
+        http.status_code    = tracing::field::Empty,
+        webhook.success     = tracing::field::Empty,
+        webhook.duration_ms = tracing::field::Empty,
+    )
+)]
 async fn deliver_event(
     pool: &PgPool,
     client: &reqwest::Client,
@@ -270,6 +298,7 @@ async fn deliver_event(
                 "endpoint not found during delivery — deleted after claim"
             );
             storage::record_endpoint_deleted(pool, event.id).await;
+            tracing::Span::current().record("webhook.success", false);
             return Ok(());
         }
     };
@@ -278,6 +307,7 @@ async fn deliver_event(
     if !endpoint.enabled {
         warn!(event_id = %event.id, endpoint_id = %endpoint.id, "endpoint disabled after claim, resetting to pending");
         storage::reset_to_pending(pool, event.id).await?;
+        tracing::Span::current().record("webhook.success", false);
         return Ok(());
     }
 
@@ -304,6 +334,8 @@ async fn deliver_event(
     // Clamp to i32::MAX before casting — prevents silent overflow if http_timeout
     // is ever set higher than ~24 days (unrealistic, but correct).
     let duration_ms = started.elapsed().as_millis().min(i32::MAX as u128) as i32;
+    let span = tracing::Span::current();
+    span.record("webhook.duration_ms", duration_ms);
 
     match response {
         Ok(resp) => {
@@ -312,10 +344,14 @@ async fn deliver_event(
             // A malicious endpoint returning a gigabyte would otherwise OOM the worker.
             let body = read_body_limited(resp, MAX_RESPONSE_BODY_BYTES).await;
 
+            span.record("http.status_code", status);
+
             if (200..300).contains(&status) {
+                span.record("webhook.success", true);
                 info!(event_id = %event.id, status, duration_ms, "delivered");
                 record_success(pool, event.id, status, body, duration_ms).await?;
             } else {
+                span.record("webhook.success", false);
                 warn!(event_id = %event.id, status, duration_ms, "endpoint returned non-2xx");
                 record_failure(
                     pool,
@@ -329,6 +365,7 @@ async fn deliver_event(
             }
         }
         Err(e) => {
+            span.record("webhook.success", false);
             warn!(event_id = %event.id, error = %e, duration_ms, "http error");
             record_failure(pool, event, &endpoint, e.to_string(), None, Some(duration_ms)).await?;
         }
