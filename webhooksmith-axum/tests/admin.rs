@@ -257,3 +257,146 @@ async fn retry_all_returns_zero_when_no_dead_events(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["retried"], 0);
 }
+
+// ── GET /admin/metrics ────────────────────────────────────────────────────────
+
+async fn get_text(app: &Router, uri: &str) -> (StatusCode, String) {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let ct = resp.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let _ = ct; // used implicitly below via caller
+    (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn metrics_returns_prometheus_text(pool: PgPool) {
+    let e = engine(pool);
+    let app = app(Arc::clone(&e));
+
+    let (status, body) = get_text(&app, "/admin/metrics").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Must contain Prometheus HELP and TYPE lines
+    assert!(body.contains("# HELP webhooksmith_events"), "must have HELP for events");
+    assert!(body.contains("# TYPE webhooksmith_events gauge"), "must have TYPE gauge");
+    assert!(body.contains("# HELP webhooksmith_endpoints"), "must have HELP for endpoints");
+
+    // Must have all 5 status labels
+    assert!(body.contains(r#"status="pending""#));
+    assert!(body.contains(r#"status="delivering""#));
+    assert!(body.contains(r#"status="failed""#));
+    assert!(body.contains(r#"status="dead""#));
+    assert!(body.contains(r#"status="delivered""#));
+
+    // Must have endpoint state labels
+    assert!(body.contains(r#"state="enabled""#));
+    assert!(body.contains(r#"state="disabled""#));
+    assert!(body.contains(r#"state="circuit_open""#));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn metrics_reflects_enqueued_events(pool: PgPool) {
+    let e = engine(pool);
+    let app = app(Arc::clone(&e));
+
+    let ep = e.register("https://example.com/hook", "metrics_test_secret_32chars___").await.unwrap();
+    e.send("order.created", serde_json::json!({}), ep.id).await.unwrap();
+    e.send("order.created", serde_json::json!({}), ep.id).await.unwrap();
+
+    let (_, body) = get_text(&app, "/admin/metrics").await;
+
+    // Parse the pending gauge value
+    let pending_line = body.lines()
+        .find(|l| l.contains(r#"status="pending""#))
+        .expect("pending gauge must exist");
+    let value: i64 = pending_line.split_whitespace().last().unwrap().parse().unwrap();
+    assert_eq!(value, 2, "pending gauge must reflect 2 enqueued events");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn metrics_reflects_enabled_disabled_endpoints(pool: PgPool) {
+    let e = engine(pool);
+    let app = app(Arc::clone(&e));
+
+    let ep1 = e.register("https://example.com/a", "metrics_test_secret_32chars___").await.unwrap();
+    let _ep2 = e.register("https://example.com/b", "metrics_test_secret_32chars___").await.unwrap();
+    e.disable_endpoint(ep1.id).await.unwrap();
+
+    let (_, body) = get_text(&app, "/admin/metrics").await;
+
+    let enabled_val: i64 = body.lines()
+        .find(|l| l.contains(r#"state="enabled""#))
+        .and_then(|l| l.split_whitespace().last()?.parse().ok())
+        .unwrap();
+    let disabled_val: i64 = body.lines()
+        .find(|l| l.contains(r#"state="disabled""#))
+        .and_then(|l| l.split_whitespace().last()?.parse().ok())
+        .unwrap();
+
+    assert_eq!(enabled_val, 1, "1 enabled endpoint");
+    assert_eq!(disabled_val, 1, "1 disabled endpoint");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn metrics_content_type_is_prometheus(pool: PgPool) {
+    let e = engine(pool);
+    let app = app(Arc::clone(&e));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ct = resp.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ct.contains("text/plain"), "content-type must be text/plain for Prometheus scraping");
+    assert!(ct.contains("0.0.4"), "must declare Prometheus text format version 0.0.4");
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn metrics_values_are_valid_integers(pool: PgPool) {
+    let e = engine(pool);
+    let app = app(Arc::clone(&e));
+
+    let (status, body) = get_text(&app, "/admin/metrics").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Every non-comment, non-empty line must end with a parseable integer
+    for line in body.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let value_str = line.split_whitespace().last().unwrap_or("NaN");
+        let parsed = value_str.parse::<i64>();
+        assert!(
+            parsed.is_ok(),
+            "metric line has non-integer value: {line:?}"
+        );
+        assert!(
+            parsed.unwrap() >= 0,
+            "metric value must be non-negative: {line:?}"
+        );
+    }
+}
