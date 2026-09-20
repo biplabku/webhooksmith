@@ -197,8 +197,19 @@ fn make_engine(
 ///
 ///     engine.migrate().await?;
 ///
+///     // Simple registration
 ///     let endpoint = engine
 ///         .register("https://partner.example.com/webhooks", "my-secret-32-chars")
+///         .await?;
+///
+///     // Registration with event filter — only receives matching events from broadcast()
+///     let _filtered = engine
+///         .register_with(
+///             webhooksmith::NewEndpoint::new("https://orders.example.com/hook", "my-secret-32-chars")
+///                 .description("Order service")
+///                 .events(["order.*", "payment.captured"])
+///                 .max_attempts(5),
+///         )
 ///         .await?;
 ///
 ///     // Simple fire-and-forget dispatch

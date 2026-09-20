@@ -321,3 +321,110 @@ fn newendpoint_default_works_for_struct_update_syntax() {
     assert_eq!(ep.initial_delay_ms, None);
     assert_eq!(ep.event_filter, None);
 }
+
+// ── Builder API tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn builder_new_creates_endpoint_with_url_and_secret() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________");
+    assert_eq!(ep.url, "https://example.com/hook");
+    assert_eq!(ep.signing_secret, "valid_secret_32chars_min________");
+    assert_eq!(ep.description, None);
+    assert_eq!(ep.max_attempts, None);
+    assert_eq!(ep.initial_delay_ms, None);
+    assert_eq!(ep.event_filter, None);
+}
+
+#[test]
+fn builder_description_sets_field() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .description("Order service");
+    assert_eq!(ep.description, Some("Order service".to_string()));
+}
+
+#[test]
+fn builder_max_attempts_sets_field() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .max_attempts(5);
+    assert_eq!(ep.max_attempts, Some(5));
+}
+
+#[test]
+fn builder_initial_delay_ms_sets_field() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .initial_delay_ms(2000);
+    assert_eq!(ep.initial_delay_ms, Some(2000));
+}
+
+#[test]
+fn builder_events_sets_filter_from_slice() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .events(["order.*", "payment.captured"]);
+    assert_eq!(
+        ep.event_filter,
+        Some(vec!["order.*".to_string(), "payment.captured".to_string()])
+    );
+}
+
+#[test]
+fn builder_event_adds_single_pattern() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .event("order.*")
+        .event("payment.captured");
+    assert_eq!(
+        ep.event_filter,
+        Some(vec!["order.*".to_string(), "payment.captured".to_string()])
+    );
+}
+
+#[test]
+fn builder_events_replaces_previous_filter() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .event("order.*")
+        .events(["payment.*"]);  // replaces the previous filter
+    assert_eq!(ep.event_filter, Some(vec!["payment.*".to_string()]));
+}
+
+#[test]
+fn builder_chaining_all_fields() {
+    let ep = NewEndpoint::new("https://example.com/hook", "valid_secret_32chars_min________")
+        .description("Test endpoint")
+        .max_attempts(3)
+        .initial_delay_ms(500)
+        .events(["order.*", "payment.captured", "refund.issued"]);
+
+    assert_eq!(ep.url, "https://example.com/hook");
+    assert_eq!(ep.description, Some("Test endpoint".to_string()));
+    assert_eq!(ep.max_attempts, Some(3));
+    assert_eq!(ep.initial_delay_ms, Some(500));
+    assert_eq!(ep.event_filter, Some(vec![
+        "order.*".to_string(),
+        "payment.captured".to_string(),
+        "refund.issued".to_string(),
+    ]));
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn builder_register_with_filter_works_end_to_end(pool: PgPool) {
+    let e = engine(pool);
+
+    // Register via builder
+    let ep = e.register_with(
+        NewEndpoint::new("https://example.com/hook", "filter_test_secret_32chars_ok___")
+            .description("Order webhook")
+            .events(["order.*"])
+            .max_attempts(3),
+    ).await.unwrap();
+
+    assert_eq!(ep.description, Some("Order webhook".to_string()));
+    assert_eq!(ep.max_attempts, 3);
+    assert_eq!(ep.event_filter, Some(vec!["order.*".to_string()]));
+
+    // Matching event is enqueued
+    let events = e.broadcast("order.created", serde_json::json!({"id": 1})).await.unwrap();
+    assert_eq!(events.len(), 1);
+
+    // Non-matching event is not enqueued
+    let events = e.broadcast("payment.captured", serde_json::json!({"id": 2})).await.unwrap();
+    assert_eq!(events.len(), 0);
+}

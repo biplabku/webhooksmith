@@ -45,6 +45,92 @@ pub struct NewEndpoint {
 }
 
 impl NewEndpoint {
+    /// Create a new endpoint configuration with a URL and signing secret.
+    ///
+    /// Use builder methods to set optional fields:
+    ///
+    /// ```rust,no_run
+    /// # use webhooksmith::NewEndpoint;
+    /// let config = NewEndpoint::new("https://partner.example.com/webhooks", "my-signing-secret")
+    ///     .description("Order notifications")
+    ///     .events(["order.*", "payment.captured"])
+    ///     .max_attempts(5);
+    /// ```
+    pub fn new(url: impl Into<String>, signing_secret: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            signing_secret: signing_secret.into(),
+            description: None,
+            max_attempts: None,
+            initial_delay_ms: None,
+            event_filter: None,
+        }
+    }
+
+    /// Set a human-readable description for this endpoint.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set the maximum number of delivery attempts before the event is dead-lettered.
+    /// Defaults to 10.
+    pub fn max_attempts(mut self, n: i32) -> Self {
+        self.max_attempts = Some(n);
+        self
+    }
+
+    /// Set the initial retry delay in milliseconds. Subsequent retries use
+    /// exponential backoff from this base. Defaults to 1000 ms.
+    pub fn initial_delay_ms(mut self, ms: i32) -> Self {
+        self.initial_delay_ms = Some(ms);
+        self
+    }
+
+    /// Subscribe this endpoint to a specific set of event type patterns.
+    ///
+    /// Only events whose type matches at least one pattern are delivered via
+    /// [`WebhookEngine::broadcast`](crate::WebhookEngine::broadcast). Events sent
+    /// with [`WebhookEngine::send`](crate::WebhookEngine::send) are always delivered
+    /// regardless of the filter.
+    ///
+    /// Pattern rules:
+    /// - `"order.created"` — exact match
+    /// - `"order.*"` — any event starting with `"order."`
+    /// - `"*"` — matches all events (equivalent to no filter)
+    ///
+    /// Replaces any previously set filter. To add a single pattern, use [`event`](Self::event).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use webhooksmith::NewEndpoint;
+    /// let config = NewEndpoint::new("https://example.com/hook", "secret")
+    ///     .events(["order.*", "payment.captured", "refund.issued"]);
+    /// ```
+    pub fn events(mut self, patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.event_filter = Some(patterns.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Add a single event type pattern to this endpoint's filter.
+    ///
+    /// Can be called multiple times to build up a filter incrementally.
+    /// If no filter has been set yet, this creates one.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use webhooksmith::NewEndpoint;
+    /// let config = NewEndpoint::new("https://example.com/hook", "secret")
+    ///     .event("order.*")
+    ///     .event("payment.captured");
+    /// ```
+    pub fn event(mut self, pattern: impl Into<String>) -> Self {
+        self.event_filter
+            .get_or_insert_with(Vec::new)
+            .push(pattern.into());
+        self
+    }
+
     /// Validates all fields including URL SSRF protection.
     /// Use for production endpoint creation.
     pub fn validate(&self) -> Result<()> {
