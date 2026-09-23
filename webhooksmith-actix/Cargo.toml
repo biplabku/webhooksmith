@@ -1,7 +1,7 @@
 [package]
 name = "webhooksmith-actix"
 description = "Actix-web integration for webhooksmith — verified webhook extractor for incoming webhooks"
-keywords = ["webhook", "actix-web", "hmac", "verification", "middleware"]
+keywords = ["webhook", "actix-web", "hmac", "signing", "middleware"]
 categories = ["web-programming", "asynchronous"]
 readme = "README.md"
 version.workspace = true
@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-webhooksmith = { version = "0.1", path = "../webhooksmith" }
+webhooksmith = { version = "0.2", path = "../webhooksmith" }
 actix-web = "4"
 serde = { workspace = true }
 serde_json = { workspace = true }

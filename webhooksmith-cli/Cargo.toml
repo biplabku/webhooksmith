@@ -1,6 +1,22 @@
 [package]
 name = "webhooksmith-cli"
-version = "0.1.0"
-edition = "2024"
+description = "CLI to inspect and manage webhooksmith webhook queues — stats, endpoints, dead-letter retry, cleanup"
+keywords = ["webhook", "cli", "queue", "admin", "delivery"]
+categories = ["command-line-utilities", "web-programming"]
+readme = "README.md"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "webhooksmith"
+path = "src/main.rs"
 
 [dependencies]
+webhooksmith = { path = "../webhooksmith", version = "0.2" }
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+uuid = { version = "1", features = ["v4"] }
+anyhow = { workspace = true }

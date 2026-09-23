@@ -557,6 +557,44 @@ cargo run --example demo -p webhooksmith
 
 ---
 
+## Changelog
+
+### 0.1.10
+- `events_global()` — list events across all endpoints for global monitoring dashboards
+- `list_endpoints_paged()` — paginated endpoint listing
+
+### 0.1.9
+- `broadcast_idempotent()` — fan-out with per-endpoint deduplication
+- `send_idempotent_in_tx()` — idempotent send inside a transaction
+
+### 0.1.8
+- SQLite backend via `SqliteEngine` — enable with `features = ["sqlite"]`
+- Same API as `WebhookEngine`: `send`, `broadcast`, `retry_dead`, `queue_stats`, etc.
+- `SqliteEngine::send_in_tx()` for true atomicity on SQLite
+
+### 0.1.7
+- Circuit breaker: after 5 consecutive failures an endpoint is backed off automatically
+  (5 min → 10 min → 20 min … capped at 320 min, doubling on each failure window)
+- `consecutive_failures` and `circuit_open_until` fields on `Endpoint`
+
+### 0.1.6
+- Event type filtering with glob patterns (`"order.*"`, `"*"`)
+- `register_with(NewEndpoint { event_filter: ... })` — subscribe endpoints to event subsets
+- `set_event_filter()` / `clear_event_filter()` — change subscriptions at runtime
+- `broadcast()` now routes by subscription automatically
+
+### 0.1.5
+- Idempotent sends: `send_idempotent()` and `broadcast_idempotent()`
+- Same key for the same endpoint always returns the same event — safe to retry
+
+### 0.1.0
+- Initial release: Postgres-backed webhook delivery
+- HMAC-SHA256 signing, exponential backoff retry, dead letter queue
+- `send()`, `broadcast()`, `send_in_tx()`, `broadcast_in_tx()`
+- SSRF protection on endpoint URLs (blocks private/loopback/link-local targets)
+
+---
+
 ## License
 
 MIT OR Apache-2.0
