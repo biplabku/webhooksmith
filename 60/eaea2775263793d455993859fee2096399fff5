@@ -1,0 +1,29 @@
+webhooksmith-axum/Cargo.toml
+  s_1c23074f8afe9c::t_c36380af5755cd 14
+  s_1c23074f8afe9c::t_25f8fde70798e2 4
+webhooksmith-cli/Cargo.toml
+  s_1c23074f8afe9c::t_9629fd3b470367 18
+  s_1c23074f8afe9c::t_3043b39c32beda 19-21
+todo/improvements.md
+  s_1c23074f8afe9c::t_7157446cd19c55 5-33
+  s_1c23074f8afe9c::t_13f6e2e8753ab0 2-4
+  s_1c23074f8afe9c::t_8fa1620aecd441 34
+webhooksmith-actix/Cargo.toml
+  s_1c23074f8afe9c::t_9a74a8828f5f8a 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "60eaea2775263793d455993859fee2096399fff5",
+  "prompts": {},
+  "sessions": {
+    "s_1c23074f8afe9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad72de54-37db-49c0-9aa4-44e23457b173",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Biplab Das <dasbiplabtu@gmail.com>"
+    }
+  }
+}
