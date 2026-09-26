@@ -1,5 +1,10 @@
 # webhooksmith
 
+[![Crates.io](https://img.shields.io/crates/v/webhooksmith.svg)](https://crates.io/crates/webhooksmith)
+[![Documentation](https://docs.rs/webhooksmith/badge.svg)](https://docs.rs/webhooksmith)
+[![CI](https://github.com/biplabku/webhooksmith/actions/workflows/ci.yml/badge.svg)](https://github.com/biplabku/webhooksmith/actions/workflows/ci.yml)
+[![License](https://img.shields.io/crates/l/webhooksmith.svg)](LICENSE)
+
 Webhook delivery for Rust backed by Postgres or SQLite. HMAC-SHA256 signing,
 automatic retry with exponential backoff, dead letter queue, and event type filtering.
 Postgres: full transactional outbox (atomic writes). SQLite: persistent delivery without Postgres.

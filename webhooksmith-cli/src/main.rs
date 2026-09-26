@@ -110,8 +110,8 @@ async fn cmd_endpoints(engine: &WebhookEngine) -> Result<()> {
         return Ok(());
     }
     println!(
-        "{:<36}  {:<8}  {:>4}  {:<42}  {}",
-        "ID", "STATUS", "FAIL", "URL", "DESCRIPTION"
+        "{:<36}  {:<8}  {:>4}  {:<42}  DESCRIPTION",
+        "ID", "STATUS", "FAIL", "URL"
     );
     println!("{}", "-".repeat(110));
     for ep in endpoints {
@@ -136,12 +136,12 @@ async fn cmd_events(engine: &WebhookEngine, status: &str, limit: i64) -> Result<
     let event_status = parse_status(status)?;
     let events = engine.events_global(event_status, limit, 0).await?;
     if events.is_empty() {
-        println!("No {} events.", status);
+        println!("No {status} events.");
         return Ok(());
     }
     println!(
-        "{:<36}  {:>8}  {:<22}  {}",
-        "EVENT_ID", "ATTEMPTS", "CREATED", "TYPE"
+        "{:<36}  {:>8}  {:<22}  TYPE",
+        "EVENT_ID", "ATTEMPTS", "CREATED"
     );
     println!("{}", "-".repeat(90));
     for ev in events {
@@ -159,11 +159,11 @@ async fn cmd_events(engine: &WebhookEngine, status: &str, limit: i64) -> Result<
 async fn cmd_log(engine: &WebhookEngine, event_id: Uuid) -> Result<()> {
     let log = engine.delivery_log(event_id).await?;
     if log.is_empty() {
-        println!("No delivery attempts found for event {}.", event_id);
+        println!("No delivery attempts found for event {event_id}.");
         return Ok(());
     }
-    println!("Delivery log for event {}:", event_id);
-    println!("{:<22}  {:>6}  {:>6}  {}", "ATTEMPTED", "STATUS", "MS", "ERROR");
+    println!("Delivery log for event {event_id}:");
+    println!("{:<22}  {:>6}  {:>6}  ERROR", "ATTEMPTED", "STATUS", "MS");
     println!("{}", "-".repeat(90));
     for attempt in log {
         let status = attempt
@@ -188,13 +188,13 @@ async fn cmd_log(engine: &WebhookEngine, event_id: Uuid) -> Result<()> {
 
 async fn cmd_retry(engine: &WebhookEngine, event_id: Uuid) -> Result<()> {
     engine.retry_dead(event_id).await?;
-    println!("Event {} requeued.", event_id);
+    println!("Event {event_id} requeued.");
     Ok(())
 }
 
 async fn cmd_retry_all(engine: &WebhookEngine, endpoint_id: Uuid) -> Result<()> {
     let count = engine.retry_all_dead(endpoint_id).await?;
-    println!("Requeued {} dead event(s) for endpoint {}.", count, endpoint_id);
+    println!("Requeued {count} dead event(s) for endpoint {endpoint_id}.");
     Ok(())
 }
 
@@ -205,8 +205,8 @@ async fn cmd_cleanup(engine: &WebhookEngine, delivered_days: u64, dead_days: u64
     let dead = engine
         .cleanup_dead(Duration::from_secs(dead_days * 86_400))
         .await?;
-    println!("Deleted {} delivered events older than {} days.", delivered, delivered_days);
-    println!("Deleted {} dead events older than {} days.", dead, dead_days);
+    println!("Deleted {delivered} delivered events older than {delivered_days} days.");
+    println!("Deleted {dead} dead events older than {dead_days} days.");
     Ok(())
 }
 
@@ -218,8 +218,7 @@ fn parse_status(s: &str) -> Result<EventStatus> {
         "failed" => Ok(EventStatus::Failed),
         "dead" => Ok(EventStatus::Dead),
         _ => bail!(
-            "unknown status '{}'; valid values: pending, delivering, delivered, failed, dead",
-            s
+            "unknown status '{s}'; valid values: pending, delivering, delivered, failed, dead"
         ),
     }
 }
