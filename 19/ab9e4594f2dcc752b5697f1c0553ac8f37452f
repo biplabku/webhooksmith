@@ -1,0 +1,23 @@
+.github/workflows/ci.yml
+  s_1c23074f8afe9c::t_c36bb68694212c 1-55
+webhooksmith/README.md
+  s_1c23074f8afe9c::t_49e1f1cc61ef09 3-7
+webhooksmith-cli/src/main.rs
+  s_1c23074f8afe9c::t_1ee5734aecf700 113-114,139,143-144,162,165-166,191,197,208-209,221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "19ab9e4594f2dcc752b5697f1c0553ac8f37452f",
+  "prompts": {},
+  "sessions": {
+    "s_1c23074f8afe9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad72de54-37db-49c0-9aa4-44e23457b173",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Biplab Das <dasbiplabtu@gmail.com>"
+    }
+  }
+}
