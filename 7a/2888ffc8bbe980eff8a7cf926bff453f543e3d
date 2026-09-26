@@ -1,0 +1,20 @@
+.github/workflows/ci.yml
+  s_1c23074f8afe9c::t_13eba440d9812c 59-60
+  s_1c23074f8afe9c::t_60102382c70713 11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "7a2888ffc8bbe980eff8a7cf926bff453f543e3d",
+  "prompts": {},
+  "sessions": {
+    "s_1c23074f8afe9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad72de54-37db-49c0-9aa4-44e23457b173",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Biplab Das <dasbiplabtu@gmail.com>"
+    }
+  }
+}
