@@ -8,6 +8,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # sqlx::query! macros validate against the committed .sqlx/ cache at compile
+  # time; the live DATABASE_URL is only used at test runtime by #[sqlx::test].
+  SQLX_OFFLINE: true
 
 jobs:
   test:
@@ -53,3 +56,5 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace -- -D warnings
+        env:
+          SQLX_OFFLINE: true
