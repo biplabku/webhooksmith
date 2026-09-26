@@ -164,10 +164,10 @@ async fn dlq_returns_dead_events(pool: PgPool) {
     let app = app(Arc::clone(&e));
 
     // Insert endpoint directly with max_attempts=1 so failures go straight to dead
-    let ep: uuid::Uuid = sqlx::query_scalar!(
+    let ep: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO webhook_endpoints (url, signing_secret, max_attempts, initial_delay_ms) VALUES ($1, 'admin_test_secret_32chars_____', 1, 1000) RETURNING id",
-        "https://bad-endpoint.example.com/hook",
     )
+    .bind("https://bad-endpoint.example.com/hook")
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -176,7 +176,8 @@ async fn dlq_returns_dead_events(pool: PgPool) {
     e.send("order.failed", serde_json::json!({}), ep).await.unwrap();
 
     // Mark both as dead directly (simulates exhausted retries)
-    sqlx::query!("UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1", ep)
+    sqlx::query("UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1")
+        .bind(ep)
         .execute(&pool)
         .await
         .unwrap();
@@ -191,10 +192,10 @@ async fn dlq_respects_pagination(pool: PgPool) {
     let e = engine(pool.clone());
     let app = app(Arc::clone(&e));
 
-    let ep: uuid::Uuid = sqlx::query_scalar!(
+    let ep: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO webhook_endpoints (url, signing_secret, max_attempts, initial_delay_ms) VALUES ($1, 'admin_test_secret_32chars_____', 1, 1000) RETURNING id",
-        "https://bad-endpoint.example.com/hook",
     )
+    .bind("https://bad-endpoint.example.com/hook")
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -203,7 +204,8 @@ async fn dlq_respects_pagination(pool: PgPool) {
     for i in 0..5 {
         e.send("order.failed", serde_json::json!({"i": i}), ep).await.unwrap();
     }
-    sqlx::query!("UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1", ep)
+    sqlx::query("UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1")
+        .bind(ep)
         .execute(&pool)
         .await
         .unwrap();
@@ -226,10 +228,10 @@ async fn retry_all_requeues_dead_events_and_resets_circuit(pool: PgPool) {
     let e = engine(pool.clone());
     let app = app(Arc::clone(&e));
 
-    let ep: uuid::Uuid = sqlx::query_scalar!(
+    let ep: uuid::Uuid = sqlx::query_scalar(
         "INSERT INTO webhook_endpoints (url, signing_secret, max_attempts, initial_delay_ms) VALUES ($1, 'admin_test_secret_32chars_____', 1, 1000) RETURNING id",
-        "https://bad-endpoint.example.com/hook",
     )
+    .bind("https://bad-endpoint.example.com/hook")
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -238,16 +240,12 @@ async fn retry_all_requeues_dead_events_and_resets_circuit(pool: PgPool) {
         e.send("order.failed", serde_json::json!({}), ep).await.unwrap();
     }
     // Manually open the circuit + mark events dead
-    sqlx::query!(
-        "UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1",
-        ep
-    )
-    .execute(&pool).await.unwrap();
-    sqlx::query!(
-        "UPDATE webhook_endpoints SET consecutive_failures = 5, circuit_open_until = NOW() + INTERVAL '10 minutes' WHERE id = $1",
-        ep
-    )
-    .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE webhook_events SET status = 'dead' WHERE endpoint_id = $1")
+        .bind(ep)
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE webhook_endpoints SET consecutive_failures = 5, circuit_open_until = NOW() + INTERVAL '10 minutes' WHERE id = $1")
+        .bind(ep)
+        .execute(&pool).await.unwrap();
 
     // POST retry-all
     let (status, json) = post_json(&app, &format!("/admin/dlq/{}/retry-all", ep)).await;
