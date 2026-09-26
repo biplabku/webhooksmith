@@ -1,0 +1,21 @@
+webhooksmith-axum/tests/admin.rs
+  s_1c23074f8afe9c::t_8557ec2bce5c20 167,170,179-180
+  s_1c23074f8afe9c::t_a78aa392d83a46 195,198,207-208
+  s_1c23074f8afe9c::t_b215f39c35ee04 231,234,243-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "4dc457163a17068d9e9faef6158fb4f7ec77dee4",
+  "prompts": {},
+  "sessions": {
+    "s_1c23074f8afe9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ad72de54-37db-49c0-9aa4-44e23457b173",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Biplab Das <dasbiplabtu@gmail.com>"
+    }
+  }
+}
